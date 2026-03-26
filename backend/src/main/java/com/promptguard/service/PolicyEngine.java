@@ -53,11 +53,11 @@ public class PolicyEngine {
                         + "Prompt cannot be sent to AI tools. (score: " + score + "/100)");
             }
             if (score >= 80) {
-                // criticalCol = true → score=85 → ALERT (not block — user can see and decide)
+                // criticalCol = true → score=85 → BLOCK (Critical security/confidentiality word)
                 return new PolicyDecision(
-                    Action.ALERT,
+                    Action.BLOCK,
                     "Organisation policy: CRITICAL keyword detected. "
-                        + "Prompt flagged as critical severity. (score: " + score + "/100)");
+                        + "Prompt cannot be sent to AI tools. (score: " + score + "/100)");
             }
             if (score >= 60) {
                 // redacted_col = true → score=75 → redact and send

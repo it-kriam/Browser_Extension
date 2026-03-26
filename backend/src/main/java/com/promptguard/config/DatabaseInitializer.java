@@ -169,6 +169,17 @@ public class DatabaseInitializer implements ApplicationRunner {
             log.warn("Duplicate policy cleanup failed: {}", e.getMessage());
         }
 
+        // ── Migration: remove overly broad policies that block/alert everything ────────
+        try {
+            int fixed = db.update(
+                "DELETE FROM user_keyword_policies " +
+                "WHERE keyword_list = '*' AND (block_col = TRUE OR critical_col = TRUE OR redacted_col = TRUE)"
+            );
+            if (fixed > 0) log.info("Migration: removed {} broad '*' policies causing false positives", fixed);
+        } catch (Exception e) {
+            log.warn("Broad policy cleanup failed: {}", e.getMessage());
+        }
+
         log.info("=== DB Init Done ===");
     }
 
@@ -177,7 +188,7 @@ public class DatabaseInitializer implements ApplicationRunner {
     private void seedPolicies() {
         // ── Org 102 = Software (rohan-user) ───────────────────────────────────
         upsert("102", "*", "*",
-                false, false, false, true,  "Software Base Policy - BLOCKED");
+                true, false, false, false,  "Software Base Policy - ALLOW");
         upsert("102", "user1", "confidential,secret,internal,restricted,private",
                 false, false, false, true,  "Software-user1 Confidential BLOCK");
         upsert("102", "user2", "password,token,api_key,access_key,private_key",
@@ -189,7 +200,7 @@ public class DatabaseInitializer implements ApplicationRunner {
 
         // ── Org 101 = Telecomm (kushal-user) ──────────────────────────────────
         upsert("101", "*", "*",
-                false, false, true,  false, "Telecomm Base Policy - CRITICAL");
+                true, false, false, false,  "Telecomm Base Policy - ALLOW");
         upsert("101", "user1", "imei,sim_card,network_key,msisdn,iccid",
                 false, false, false, true,  "Telecomm-user1 Telecom identifiers BLOCK");
         upsert("101", "user1", "subscriber_id,call_record,location_data,billing_info",
@@ -202,8 +213,8 @@ public class DatabaseInitializer implements ApplicationRunner {
                 false, false, false, true,  "Telecomm-user1 SIM identifiers BLOCK");
         upsert("101", "user2", "number_portability,roaming_fraud",
                 false, false, true,  false, "Telecomm-user2 Roaming CRITICAL");
-        upsert("101", "user2", "*",
-                false, true,  false, false, "Telecomm-user2 All REDACT");
+        upsert("101", "user2", "confidential,customer_data",
+                false, true,  false, false, "Telecomm-user2 Data REDACT");
     }
 
     private void upsert(String userId, String subUser, String words,

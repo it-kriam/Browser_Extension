@@ -24,14 +24,14 @@ import java.util.List;
  * ALL 4 COLUMN → ACTION mappings:
  *
  *   block_col    = true  →  score=100  →  Action=BLOCK,  RiskLevel=CRITICAL
- *   critial_col  = true  →  score=85   →  Action=ALERT,  RiskLevel=CRITICAL  ← FIXED
+ *   critial_col  = true  →  score=85   →  Action=BLOCK,  RiskLevel=CRITICAL
  *   redacted_col = true  →  score=75   →  Action=REDACT, RiskLevel=HIGH
  *   allow_col    = true  →  no result  →  prompt passes through (ALLOW)
  *
- * BLOCK vs CRITICAL:
- *   block_col   → absolute block (score=100), prompt cannot be sent
- *   critial_col → critical alert (score=85), flagged as ALERT so user sees yellow warning
- *   block_col results in Action.BLOCK. critial_col results in Action.ALERT.
+ * BLOCK:
+ *   block_col   → absolute block (score=100)
+ *   critial_col → critical block (score=85)
+ *   Both result in Action.BLOCK. Prompt cannot be sent.
  */
 @Component
 public class UserKeywordDetector {

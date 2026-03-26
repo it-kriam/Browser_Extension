@@ -24,12 +24,12 @@ public class UserPolicyRepository {
         "prompt_col AS promptCol " +
         "FROM user_keyword_policies ";
 
-    /** Used by UserKeywordDetector — fetch policies for this sub-user OR org-wide '*' policies */
+    /** Used by UserKeywordDetector — fetch all policies for this org (user_id) */
     public List<UserKeywordPolicy> findPolicies(String userId, String subUser) {
         return db.query(
-            SELECT_COLS + "WHERE user_id = ? AND (sub_user = ? OR sub_user = '*') ORDER BY id",
+            SELECT_COLS + "WHERE user_id = ? ORDER BY id",
             new BeanPropertyRowMapper<>(UserKeywordPolicy.class),
-            userId, subUser);
+            userId);
     }
 
     /** Used by PolicyController — fetch all policies for one org */

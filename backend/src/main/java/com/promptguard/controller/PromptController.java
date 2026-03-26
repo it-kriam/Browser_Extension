@@ -35,6 +35,23 @@ public class PromptController {
     public ResponseEntity<PromptResponse> handlePrompt(@RequestBody PromptRequest request) {
         long start = System.currentTimeMillis();
 
+        String sub = request.getSubUser();
+        if (sub == null || sub.trim().isEmpty() || "anonymous-sub".equals(sub)) sub = "unknown";
+        
+        String uid = request.getUserId();
+        // Resolve anonymous-user based on subUser if available
+        if (uid == null || uid.trim().isEmpty() || "anonymous-user".equals(uid)) {
+            if ("kushal-user".equalsIgnoreCase(sub)) uid = "101";
+            else if ("rohan-user".equalsIgnoreCase(sub)) uid = "102";
+            else uid = "anonymous-user";
+        }
+        // Map natural text org names to their DB orgId manually for fallback safety
+        if ("Telecomm".equalsIgnoreCase(uid) || "kushal-user".equalsIgnoreCase(uid)) uid = "101";
+        if ("Software".equalsIgnoreCase(uid) || "rohan-user".equalsIgnoreCase(uid)) uid = "102";
+        
+        request.setSubUser(sub);
+        request.setUserId(uid);
+
         List<DetectionResult> detections = validationService.validate(
             request.getPrompt(), request.getUserId(), request.getSubUser());
         RiskScore    riskScore = riskScoreCalculator.calculate(detections);

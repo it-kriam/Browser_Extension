@@ -743,7 +743,7 @@
 
             {/* body */}
             <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
                 {[
                   ["User", log.userId || log.user_id || "—"],
                   ["Tool", log.tool || "—"],
@@ -751,6 +751,8 @@
                   ["Risk Score", String(log.riskScore ?? log.risk_score ?? 0)],
                   ["Risk Type", log.highestRiskType || log.highest_risk_type || "NONE"],
                   ["Time", (log.timestamp || log.created_at || "—").replace("T", " ").replace(/\.\d+.*/, "")],
+                  ["Tokens Used", (log.tokensUsed ?? log.tokens_used ?? 0).toLocaleString()],
+                  ["Tokens Saved", (log.tokensSaved ?? log.tokens_saved ?? 0).toLocaleString()],
                 ].map(([k, v]) => (
                   <div key={k} style={{ background: "rgba(0,0,0,.2)", borderRadius: 8, padding: "8px 11px", border: "1px solid #30363d" }}>
                     <div style={{ fontSize: 9, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 3 }}>{k}</div>
@@ -992,7 +994,7 @@
       const [orgFilter, setOrgFilter] = useState("ALL");
       const [form, setForm] = useState({
         userId: "", subUser: "", keywordList: "",
-        blockCol: false, criticalCol: false, redactedCol: false, promptCol: ""
+        blockCol: false, criticalCol: false, redactedCol: false, allowCol: false, promptCol: ""
       });
       const [saving, setSaving] = useState(false);
       const [msg, setMsg] = useState(null);
@@ -1040,7 +1042,7 @@
         if (!form.userId.trim() || !form.subUser.trim() || !form.keywordList.trim()) {
           setMsg("❌ userId, subUser and keywordList are required"); return;
         }
-        if (!form.blockCol && !form.critialCol && !form.redactedCol) {
+        if (!form.blockCol && !form.criticalCol && !form.redactedCol) {
           setMsg("❌ Select at least one action column"); return;
         }
         setSaving(true);
@@ -1048,7 +1050,7 @@
           const res = await fetch(`${API}/api/v1/policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
           if (!res.ok) throw new Error("Failed");
           setMsg("✅ Policy saved");
-          setForm({ userId: "", subUser: "", keywordList: "", blockCol: false, critialCol: false, redactedCol: false, promptCol: "" });
+          setForm({ userId: "", subUser: "", keywordList: "", blockCol: false, criticalCol: false, redactedCol: false, allowCol: false, promptCol: "" });
           load();
         } catch { setMsg("❌ Save failed"); }
         setSaving(false);
@@ -1076,39 +1078,54 @@
         });
       });
 
-      const handleDeleteKw = async (policyId, kwToRemove, _allKws, _policyObj) => {
+      const handleDeleteKw = async (e, policyId, kwToRemove, _allKws, _policyObj) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMsg(`⏳ Removing "${kwToRemove}"...`);
         try {
-          // Remove the keyword from ALL policies for this org that contain it
-          // This ensures "only 1 times allowed" in the display and database
+          // Find all policies that contain this keyword (across the full list, not just filtered)
           const policiesFound = policies.filter(p => {
             const list = (p.keywordList || p.keyword_list || "").split(",").map(k => k.trim().toLowerCase());
             return list.includes(kwToRemove.toLowerCase());
           });
-          
+
+          if (policiesFound.length === 0) {
+            setMsg(`❌ No policy found containing "${kwToRemove}"`);
+            setTimeout(() => setMsg(null), 3000);
+            return;
+          }
+
           for (const p of policiesFound) {
             const pid = p.id;
             const currentKws = (p.keywordList || p.keyword_list || "").split(",").map(k => k.trim()).filter(Boolean);
             const remaining = currentKws.filter(k => k.toLowerCase() !== kwToRemove.toLowerCase());
-            
-            // Delete old policy
-            await fetch(`${API}/api/v1/policies/${pid}`, { method: "DELETE" });
-            
-            // If there's anything left, re-insert
+
+            // Delete old policy row
+            const delRes = await fetch(`${API}/api/v1/policies/${pid}`, { method: "DELETE" });
+            if (!delRes.ok) throw new Error(`DELETE /policies/${pid} failed: ${delRes.status}`);
+
+            // Re-insert with the keyword removed (only if keywords remain)
             if (remaining.length > 0) {
-              const body = { 
-                userId: p.userId || p.user_id, 
-                subUser: p.subUser || p.sub_user, 
-                keywordList: remaining.join(","), 
-                blockCol: p.blockCol || p.block_col || false, 
-                criticalCol: p.criticalCol || p.critical_col || false, 
-                redactedCol: p.redactedCol || p.redacted_col || false, 
+              const body = {
+                userId: p.userId || p.user_id,
+                subUser: p.subUser || p.sub_user,
+                keywordList: remaining.join(","),
+                blockCol: p.blockCol || p.block_col || false,
+                criticalCol: p.criticalCol || p.critical_col || false,
+                redactedCol: p.redactedCol || p.redacted_col || false,
                 allowCol: p.allowCol || p.allow_col || false,
-                promptCol: p.promptCol || p.prompt_col || "" 
+                promptCol: p.promptCol || p.prompt_col || ""
               };
-              await fetch(`${API}/api/v1/policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+              const insRes = await fetch(`${API}/api/v1/policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+              if (!insRes.ok) throw new Error(`Re-insert policy failed: ${insRes.status}`);
             }
           }
-        } catch (e) { console.error("Delete keyword failed", e); }
+          setMsg(`✅ "${kwToRemove}" removed`);
+        } catch (err) {
+          console.error("Delete keyword failed", err);
+          setMsg(`❌ Failed: ${err.message}`);
+        }
+        setTimeout(() => setMsg(null), 3000);
         load();
       };
 
@@ -1147,6 +1164,15 @@
             ))}
           </div>
 
+          {/* ── STATUS MESSAGE (shown for both delete and save) ── */}
+          {msg && (
+            <div style={{ marginBottom: 12, padding: "8px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+              background: msg.startsWith("❌") ? "rgba(218,54,51,.12)" : msg.startsWith("⏳") ? "rgba(56,139,253,.1)" : "rgba(46,160,67,.12)",
+              border: `1px solid ${msg.startsWith("❌") ? "rgba(218,54,51,.35)" : msg.startsWith("⏳") ? "rgba(56,139,253,.3)" : "rgba(46,160,67,.3)"}`,
+              color: msg.startsWith("❌") ? "#f85149" : msg.startsWith("⏳") ? "#58a6ff" : "#3fb950",
+            }}>{msg}</div>
+          )}
+
           {/* ── KEYWORD REFERENCE CHIPS ── */}
           {!loading && Object.keys(byOrg).length > 0 && (
             <div style={{ marginBottom: 20 }}>
@@ -1172,7 +1198,7 @@
                               {items.map((item, i) => (
                                 <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 3, background: chipBg, border: `1px solid ${border}66`, color, borderRadius: 5, padding: "2px 7px 2px 8px", fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}>
                                   {item.kw === "*" ? "* (all)" : item.kw}
-                                  <button onClick={() => handleDeleteKw(item.policyId, item.kw, item.allKws, item.policyObj)}
+                                  <button onClick={(e) => handleDeleteKw(e, item.policyId, item.kw, item.allKws, item.policyObj)}
                                     style={{ background: "none", border: "none", color, cursor: "pointer", padding: "0 0 0 2px", fontSize: 12, lineHeight: 1, opacity: .6, fontFamily: "inherit" }}>×</button>
                                 </span>
                               ))}
@@ -1269,6 +1295,7 @@
       const [subTokenTab, setSubTokenTab] = useState("used");
       const [filter, setFilter] = useState("ALL");
       const [logActionFilter, setLogActionFilter] = useState("ALL");
+      const [promptModal, setPromptModal] = useState(null);
       const filterRef = useRef("ALL");
       const userRef = useRef(user);
       useEffect(() => { filterRef.current = filter; }, [filter]);
@@ -1288,7 +1315,7 @@
             fetch(`${API}/api/analytics/risk-breakdown`).then(r => r.json()).catch(() => []),
             fetch(logsUrl).then(r => r.json()).catch(() => []),
             isA ? fetch(`${API}/api/analytics/users`).then(r => r.json()).catch(() => []) : Promise.resolve([]),
-            fetch(`${API}/api/analytics/tokens`).then(r => r.json()).catch(() => ({})),
+            fetch(`${API}/api/analytics/tokens?userId=${isA && f === "ALL" ? "ALL" : (f === "ALL" ? u.userId : f)}`).then(r => r.json()).catch(() => ({})),
           ]);
           setData({
             summary: typeof sum === "object" && !Array.isArray(sum) ? sum : {},
@@ -1590,9 +1617,18 @@
 
                 {tab === "tokens" && (
                   <div className="fade-up">
-                    <div style={{ marginBottom: 20 }}>
-                      <h1 style={{ fontSize: 18, fontWeight: 700, color: "#e6edf3" }}>Token Analytics</h1>
-                      <p style={{ fontSize: 12, color: "#6e7681", marginTop: 2 }}>Monitor AI token consumption and financial efficiency</p>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                      <div>
+                        <h1 style={{ fontSize: 18, fontWeight: 700, color: "#e6edf3" }}>Token Analytics</h1>
+                        <p style={{ fontSize: 12, color: "#6e7681", marginTop: 2 }}>Monitor AI token consumption and financial efficiency</p>
+                      </div>
+                      {isA && (
+                        <select value={filter} onChange={e => handleFilter(e.target.value)}
+                          style={{ marginLeft: "auto", background: "#161b22", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: 8, padding: "7px 12px", fontSize: 12, outline: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                          <option value="ALL">All Users</option>
+                          {users.map(u => <option key={u.user_id} value={u.user_id}>{u.display_name || u.user_id}</option>)}
+                        </select>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 30, marginBottom: 20, borderBottom: "1px solid #21262d" }}>
@@ -1638,21 +1674,30 @@
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                           <thead style={{ position: "sticky", top: 0, background: "#161b22", zIndex: 1, borderBottom: "1px solid #21262d" }}>
                             <tr>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>Time</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>User</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>Tool</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>{subTokenTab === "used" ? "Tokens" : "Saved"}</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>{subTokenTab === "used" ? "Cost" : "Value"}</th>
+                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "15%" }}>Time</th>
+                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "15%" }}>User</th>
+                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "15%" }}>Tool</th>
+                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "35%" }}>Prompt</th>
+                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "10%" }}>{subTokenTab === "used" ? "Tokens" : "Saved"}</th>
+                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "10%" }}>{subTokenTab === "used" ? "Cost" : "Value"}</th>
                             </tr>
                           </thead>
                           <tbody>
                             {(subTokenTab === "used" ? (data.tokenData?.usedLogs || []) : (data.tokenData?.savedLogs || [])).length === 0 ? (
-                               <tr><td colSpan="5" style={{ padding: 40, textAlign: "center", color: "#484f58", fontSize: 13 }}>No token data available yet.</td></tr>
+                               <tr><td colSpan="6" style={{ padding: 40, textAlign: "center", color: "#484f58", fontSize: 13 }}>No token data available yet.</td></tr>
                             ) : (subTokenTab === "used" ? (data.tokenData?.usedLogs || []) : (data.tokenData?.savedLogs || [])).map((l, i) => (
                               <tr key={i} className="tr-hover" style={{ borderBottom: "1px solid #21262d55" }}>
-                                <td style={{ padding: 14, color: "#8b949e", fontFamily: "'JetBrains Mono',monospace" }}>{fmtAge(l.timestamp)}</td>
-                                <td style={{ padding: 14, color: "#58a6ff", fontWeight: 700 }}>{l.userId}</td>
-                                <td style={{ padding: 14, color: "#c9d1d9" }}>{l.tool}</td>
+                                <td style={{ padding: 14, color: "#8b949e", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{fmtAge(l.timestamp)}</td>
+                                <td style={{ padding: 14, color: "#58a6ff", fontWeight: 700, whiteSpace: "nowrap" }}>{l.userId}</td>
+                                <td style={{ padding: 14, color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.tool}</td>
+                                <td style={{ padding: 14, color: "#c9d1d9", whiteSpace: "nowrap" }}>
+                                  {l.originalPrompt ? (
+                                    <div title="Click to view full prompt" onClick={() => setPromptModal(l)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, cursor: "pointer", transition: "all .2s" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"} onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
+                                      <span style={{ fontSize: 13 }}>📄</span>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: "#8b949e" }}>Original Prompt</span>
+                                    </div>
+                                  ) : <span style={{ color: "#484f58" }}>—</span>}
+                                </td>
                                 <td style={{ padding: 14, color: "#c9d1d9", fontWeight: 600 }}>{nv(l.tokens || l.saved).toLocaleString()}</td>
                                 <td style={{ padding: 14, color: subTokenTab === "used" ? "#fca5a5" : "#39d353", fontWeight: 800, fontSize: 13 }}>
                                     {subTokenTab === "used" ? "-" : "+"}${nv(l.cost || l.value).toFixed(4)}

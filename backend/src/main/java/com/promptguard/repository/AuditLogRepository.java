@@ -83,14 +83,26 @@ public class AuditLogRepository {
 
     public List<Map<String, Object>> findUsedTokensLogs(int limit) {
         return db.queryForList(
-            "SELECT user_id AS \"userId\", tool, tokens_used AS \"tokens\", cost_used AS \"cost\", created_at AS \"timestamp\" " +
+            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_used AS \"tokens\", cost_used AS \"cost\", created_at AS \"timestamp\" " +
             "FROM audit_logs WHERE tokens_used > 0 ORDER BY created_at DESC LIMIT ?", limit);
+    }
+
+    public List<Map<String, Object>> findUsedTokensLogsByUser(String userId, int limit) {
+        return db.queryForList(
+            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_used AS \"tokens\", cost_used AS \"cost\", created_at AS \"timestamp\" " +
+            "FROM audit_logs WHERE tokens_used > 0 AND user_id = ? ORDER BY created_at DESC LIMIT ?", userId, limit);
     }
 
     public List<Map<String, Object>> findSavedTokensLogs(int limit) {
         return db.queryForList(
-            "SELECT user_id AS \"userId\", tool, tokens_saved AS \"saved\", cost_saved AS \"value\", created_at AS \"timestamp\" " +
+            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_saved AS \"saved\", cost_saved AS \"value\", created_at AS \"timestamp\" " +
             "FROM audit_logs WHERE tokens_saved > 0 ORDER BY created_at DESC LIMIT ?", limit);
+    }
+
+    public List<Map<String, Object>> findSavedTokensLogsByUser(String userId, int limit) {
+        return db.queryForList(
+            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_saved AS \"saved\", cost_saved AS \"value\", created_at AS \"timestamp\" " +
+            "FROM audit_logs WHERE tokens_saved > 0 AND user_id = ? ORDER BY created_at DESC LIMIT ?", userId, limit);
     }
 
     public Map<String, Object> findStatsByUser(String userId) {

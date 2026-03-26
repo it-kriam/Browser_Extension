@@ -4,6 +4,10 @@
 // Always sends userId from storage — never anonymous
 // ============================================
 
+function isContextValid() {
+  return typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.id;
+}
+
 let interceptEnabled = true;
 
 function detectTool() {
@@ -37,7 +41,20 @@ async function detectBrowser() {
 
 async function getSettings() {
   return new Promise((resolve) => {
+    if (!isContextValid()) {
+      return resolve({
+        userId: "anonymous-user", subUser: "anonymous-sub",
+        apiUrl: "http://localhost:8080", enabled: true
+      });
+    }
     chrome.storage.sync.get(["userId", "subUser", "apiUrl", "enabled"], (data) => {
+      // Catch invalidated context in callback
+      if (chrome.runtime.lastError) {
+        return resolve({
+          userId: "anonymous-user", subUser: "anonymous-sub",
+          apiUrl: "http://localhost:8080", enabled: true
+        });
+      }
       resolve({
         userId:  (data.userId && data.userId.trim()) ? data.userId.trim() : "anonymous-user",
         subUser: (data.subUser && data.subUser.trim()) ? data.subUser.trim() : "anonymous-sub",
@@ -93,46 +110,36 @@ function showToast(message, type) {
 }
 
 async function checkPrompt(promptText, submitFn) {
-  const { userId, subUser, apiUrl, enabled } = await getSettings();
-  if (!enabled) { submitFn(promptText); return; }
-
-  try {
-    const res = await fetch(`${apiUrl}/api/v1/prompts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        subUser,
-        tool: detectTool(),
-        browserName: await detectBrowser(),
-        prompt: promptText,
-        timestamp: new Date().toISOString().slice(0, 19),
-      }),
-    });
-
-    if (!res.ok) { submitFn(promptText); return; }
-
-    const result = await res.json();
-
-    if (result.action === "BLOCK") {
-      showToast("Prompt BLOCKED! " + result.reason, "block");
-      // Do NOT call submitFn — prompt is stopped here
-    } else if (result.action === "REDACT") {
-      showToast("Sensitive data removed. " + result.reason, "redact");
-      submitFn(result.redactedPrompt || promptText);
-    } else if (result.action === "ALERT") {
-      showToast("Warning: " + result.reason, "alert");
-      submitFn(promptText);
-    } else {
-      submitFn(promptText);
-    }
-
-    chrome.runtime.sendMessage({ type: "UPDATE_STATS", action: result.action });
-
-  } catch (err) {
-    console.error("[PromptGuard]", err);
-    submitFn(promptText); // fail open
+  if (!isContextValid()) {
+    alert("PromptGuard extension was updated or reloaded.\nPlease refresh this page to continue using AI tools.");
+    return; // Block prompt to prevent anonymous/untracked data
   }
+  chrome.storage.sync.get(["enabled"], async (data) => {
+    if (data.enabled === false) { submitFn(promptText); return; }
+    
+    // Always call background.js to fetch config/API
+    chrome.runtime.sendMessage(
+      { type: "PROCESS_PROMPT", prompt: promptText, tool: detectTool(), browserName: await detectBrowser() },
+      (result) => {
+        if (chrome.runtime.lastError || !result) {
+          submitFn(promptText);
+          return;
+        }
+
+        if (result.action === "BLOCK") {
+          showToast("Prompt BLOCKED! " + result.reason, "block");
+        } else if (result.action === "REDACT") {
+          showToast("Sensitive data removed. " + result.reason, "redact");
+          submitFn(result.redactedPrompt || promptText);
+        } else if (result.action === "ALERT") {
+          showToast("Warning: " + result.reason, "alert");
+          submitFn(promptText);
+        } else {
+          submitFn(promptText);
+        }
+      }
+    );
+  });
 }
 
 function getPromptText(el) {

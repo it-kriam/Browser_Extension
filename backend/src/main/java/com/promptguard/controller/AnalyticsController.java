@@ -20,6 +20,13 @@ public class AnalyticsController {
         this.db = db;
     }
 
+    private String resolveUserId(String userId) {
+        if (userId == null) return null;
+        if ("Telecomm".equalsIgnoreCase(userId) || "kushal-user".equalsIgnoreCase(userId)) return "101";
+        if ("Software".equalsIgnoreCase(userId) || "rohan-user".equalsIgnoreCase(userId)) return "102";
+        return userId;
+    }
+
     @GetMapping("/risk-summary")
     public ResponseEntity<Map<String, Object>> getRiskSummary() {
         Map<String, Object> summary = repository.getGlobalSummary();
@@ -30,8 +37,15 @@ public class AnalyticsController {
     }
 
     @GetMapping("/tokens")
-    public ResponseEntity<Map<String, Object>> getTokenStats() {
-        Map<String, Object> summary = repository.getGlobalSummary();
+    public ResponseEntity<Map<String, Object>> getTokenStats(@RequestParam(required = false) String userId) {
+        String resolvedId = resolveUserId(userId);
+        Map<String, Object> summary;
+        if (resolvedId == null || resolvedId.isEmpty() || "ALL".equals(resolvedId)) {
+            summary = repository.getGlobalSummary();
+        } else {
+            summary = repository.findStatsByUser(resolvedId);
+        }
+        
         Map<String, Object> resp = new LinkedHashMap<>();
         
         resp.put("totalTokensUsed", summary.get("tokensUsed"));
@@ -39,8 +53,13 @@ public class AnalyticsController {
         resp.put("totalTokensSaved", summary.get("tokensSaved"));
         resp.put("totalCostSaved", summary.get("costSaved"));
         
-        resp.put("usedLogs", repository.findUsedTokensLogs(50));
-        resp.put("savedLogs", repository.findSavedTokensLogs(50));
+        if (resolvedId == null || resolvedId.isEmpty() || "ALL".equals(resolvedId)) {
+            resp.put("usedLogs", repository.findUsedTokensLogs(50));
+            resp.put("savedLogs", repository.findSavedTokensLogs(50));
+        } else {
+            resp.put("usedLogs", repository.findUsedTokensLogsByUser(resolvedId, 50));
+            resp.put("savedLogs", repository.findSavedTokensLogsByUser(resolvedId, 50));
+        }
         
         return ResponseEntity.ok(resp);
     }
@@ -69,7 +88,8 @@ public class AnalyticsController {
     public ResponseEntity<?> myPrompts(
             @RequestParam String userId,
             @RequestParam(defaultValue = "50") int limit) {
-        if (userId == null || userId.isBlank())
+        String resolvedId = resolveUserId(userId);
+        if (resolvedId == null || resolvedId.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "userId is required"));
 
         List<Map<String, Object>> rows = db.queryForList(
@@ -86,7 +106,7 @@ public class AnalyticsController {
                 "  action_reason     AS \"actionReason\", " +
                 "  created_at        AS \"timestamp\" " +
                 "FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-                userId, limit);
+                resolvedId, limit);
         return ResponseEntity.ok(rows);
     }
 
@@ -99,10 +119,11 @@ public class AnalyticsController {
 
     @GetMapping("/my-stats")
     public ResponseEntity<?> getMyStats(@RequestParam String userId) {
-        if (userId == null || userId.isBlank())
+        String resolvedId = resolveUserId(userId);
+        if (resolvedId == null || resolvedId.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "userId is required"));
         try {
-            return ResponseEntity.ok(repository.findStatsByUser(userId));
+            return ResponseEntity.ok(repository.findStatsByUser(resolvedId));
         } catch (Exception e) {
             return ResponseEntity.ok(Map.of("total", 0, "blocked", 0, "redacted", 0, "allowed", 0));
         }

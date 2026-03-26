@@ -61,7 +61,50 @@ chrome.storage.local.get("stats", (data) => {
 // ── Message handler ───────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-  // Stats update from content.js
+  // PROCESS_PROMPT — handles API securely directly inside service worker
+  if (message.type === "PROCESS_PROMPT") {
+    (async () => {
+      try {
+        const { userId, subUser, apiUrl } = await getSettings();
+        const res = await fetch(`${apiUrl}/api/v1/prompts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            subUser,
+            tool: message.tool || "Unknown",
+            browserName: message.browserName || "Unknown",
+            prompt: message.prompt,
+            timestamp: new Date().toISOString().slice(0, 19)
+          })
+        });
+        if (!res.ok) { sendResponse({ action: "ALLOW" }); return; }
+        const result = await res.json();
+        
+        // Update stats
+        stats.total++;
+        const a = (result.action || "").toUpperCase();
+        if      (a === "BLOCK")  stats.blocked++;
+        else if (a === "REDACT") stats.redacted++;
+        else if (a === "ALERT")  stats.alerted++;
+        else                     stats.allowed++;
+
+        if (stats.blocked > 0) {
+          chrome.action.setBadgeText({ text: String(stats.blocked) });
+          chrome.action.setBadgeBackgroundColor({ color: "#dc2626" });
+        }
+        chrome.storage.local.set({ stats });
+        
+        sendResponse(result);
+      } catch (e) {
+        console.error("[PromptGuard BG]", e);
+        sendResponse({ action: "ALLOW" });
+      }
+    })();
+    return true; // Keep channel open!
+  }
+
+  // Stats update from content.js (fallback)
   if (message.type === "UPDATE_STATS") {
     stats.total++;
     const a = (message.action || "").toUpperCase();

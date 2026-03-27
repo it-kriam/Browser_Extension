@@ -104,6 +104,18 @@ public class AnalyticsController {
                 "  risk_level        AS \"riskLevel\", " +
                 "  action, " +
                 "  action_reason     AS \"actionReason\", " +
+                "  tokens_used       AS \"tokensUsed\", " + 
+                "  tokens_used       AS \"tokens_used\", " +
+                "  tokens_used       AS \"tokens\", " +
+                "  tokens_saved      AS \"tokensSaved\", " +
+                "  tokens_saved      AS \"tokens_saved\", " +
+                "  tokens_saved      AS \"saved\", " +
+                "  cost_used         AS \"costUsed\", " +
+                "  cost_used         AS \"cost_used\", " +
+                "  cost_used         AS \"cost\", " +
+                "  cost_saved        AS \"costSaved\", " +
+                "  cost_saved        AS \"cost_saved\", " +
+                "  cost_saved        AS \"value\", " +
                 "  created_at        AS \"timestamp\" " +
                 "FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
                 resolvedId, limit);

@@ -133,6 +133,28 @@ public class DatabaseInitializer implements ApplicationRunner {
         // ── Step 7: Seed keyword policies ────────────────────────────────────
         seedPolicies();
 
+        // ── Migration: patch legacy 0-value logs ────────────────────────────
+        try {
+            // 1. Set basic token estimates (1 token per 4 chars + 300 response buffer)
+            db.update("UPDATE audit_logs SET tokens_used = (LENGTH(original_prompt)/4 + 300) " +
+                      "WHERE tokens_used = 0 AND tokens_saved = 0 AND action != 'BLOCK'");
+            
+            db.update("UPDATE audit_logs SET tokens_saved = (LENGTH(original_prompt)/4 + 300) " +
+                      "WHERE tokens_used = 0 AND tokens_saved = 0 AND action = 'BLOCK'");
+
+            // 2. Set cost estimates based on tool (Gemini default logic)
+            // Gemini: $3.5 (1M) Input, $10.5 (1M) Output -> ~ $0.000007 per token (blended)
+            db.update("UPDATE audit_logs SET cost_used = tokens_used * 0.000007 " +
+                      "WHERE cost_used = 0 AND cost_saved = 0 AND action != 'BLOCK'");
+            
+            db.update("UPDATE audit_logs SET cost_saved = tokens_saved * 0.000007 " +
+                      "WHERE cost_used = 0 AND cost_saved = 0 AND action = 'BLOCK'");
+            
+            log.info("Migration: Patched legacy zero-value audit logs with estimates");
+        } catch (Exception e) {
+            log.warn("Legacy log patch failed: {}", e.getMessage());
+        }
+
         // ── Summary ───────────────────────────────────────────────────────────
         try {
             Long u = db.queryForObject("SELECT COUNT(*) FROM users", Long.class);

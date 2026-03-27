@@ -73,9 +73,17 @@ public class AuditLogRepository {
                 "  action, " +
                 "  action_reason     AS \"actionReason\", " +
                 "  tokens_used       AS \"tokensUsed\", " +
+                "  tokens_used       AS \"tokens_used\", " +
+                "  tokens_used       AS \"tokens\", " +
                 "  tokens_saved      AS \"tokensSaved\", " +
+                "  tokens_saved      AS \"tokens_saved\", " +
+                "  tokens_saved      AS \"saved\", " +
                 "  cost_used         AS \"costUsed\", " +
+                "  cost_used         AS \"cost_used\", " +
+                "  cost_used         AS \"cost\", " +
                 "  cost_saved        AS \"costSaved\", " +
+                "  cost_saved        AS \"cost_saved\", " +
+                "  cost_saved        AS \"value\", " +
                 "  created_at        AS \"timestamp\" " +
                 "FROM audit_logs ORDER BY created_at DESC LIMIT ?",
                 limit);
@@ -83,25 +91,41 @@ public class AuditLogRepository {
 
     public List<Map<String, Object>> findUsedTokensLogs(int limit) {
         return db.queryForList(
-            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_used AS \"tokens\", cost_used AS \"cost\", created_at AS \"timestamp\" " +
+            "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
+            "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
+            "tokens_used AS \"tokensUsed\", tokens_used AS \"tokens\", tokens_saved AS \"tokensSaved\", " +
+            "cost_used AS \"costUsed\", cost_used AS \"cost\", cost_saved AS \"costSaved\", " +
+            "created_at AS \"timestamp\" " +
             "FROM audit_logs WHERE tokens_used > 0 ORDER BY created_at DESC LIMIT ?", limit);
     }
 
     public List<Map<String, Object>> findUsedTokensLogsByUser(String userId, int limit) {
         return db.queryForList(
-            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_used AS \"tokens\", cost_used AS \"cost\", created_at AS \"timestamp\" " +
+            "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
+            "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
+            "tokens_used AS \"tokensUsed\", tokens_used AS \"tokens\", tokens_saved AS \"tokensSaved\", " +
+            "cost_used AS \"costUsed\", cost_used AS \"cost\", cost_saved AS \"costSaved\", " +
+            "created_at AS \"timestamp\" " +
             "FROM audit_logs WHERE tokens_used > 0 AND user_id = ? ORDER BY created_at DESC LIMIT ?", userId, limit);
     }
 
     public List<Map<String, Object>> findSavedTokensLogs(int limit) {
         return db.queryForList(
-            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_saved AS \"saved\", cost_saved AS \"value\", created_at AS \"timestamp\" " +
+            "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
+            "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
+            "tokens_used AS \"tokensUsed\", tokens_saved AS \"tokensSaved\", tokens_saved AS \"saved\", " +
+            "cost_used AS \"costUsed\", cost_saved AS \"costSaved\", cost_saved AS \"value\", " +
+            "created_at AS \"timestamp\" " +
             "FROM audit_logs WHERE tokens_saved > 0 ORDER BY created_at DESC LIMIT ?", limit);
     }
 
     public List<Map<String, Object>> findSavedTokensLogsByUser(String userId, int limit) {
         return db.queryForList(
-            "SELECT user_id AS \"userId\", tool, original_prompt AS \"originalPrompt\", tokens_saved AS \"saved\", cost_saved AS \"value\", created_at AS \"timestamp\" " +
+            "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
+            "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
+            "tokens_used AS \"tokensUsed\", tokens_saved AS \"tokensSaved\", tokens_saved AS \"saved\", " +
+            "cost_used AS \"costUsed\", cost_saved AS \"costSaved\", cost_saved AS \"value\", " +
+            "created_at AS \"timestamp\" " +
             "FROM audit_logs WHERE tokens_saved > 0 AND user_id = ? ORDER BY created_at DESC LIMIT ?", userId, limit);
     }
 

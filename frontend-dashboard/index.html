@@ -327,7 +327,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useCallback, useRef, memo } = React;
+    const { useState, useEffect, useCallback, useMemo, useRef, memo } = React;
     const API = "http://localhost:8080";
 
     const nv = v => Number(v) || 0;
@@ -407,6 +407,9 @@
         } catch { setErr("Verification failed. Is backend running?"); }
         setBusy(false);
       };
+
+      const today = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY format
+
       return (
         <div style={{ flex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(ellipse 70% 40% at 50% 0%,rgba(31,111,235,.1),transparent 65%),#0d1117", padding: 24 }}>
           <div style={{ width: "100%", maxWidth: 420 }} className="fade-up">
@@ -490,12 +493,22 @@
     /* ══════════════════════════════════
        LINE CHART
     ══════════════════════════════════ */
-    const LineChart = memo(function LineChart({ logs }) {
+    const LineChart = memo(function LineChart({ logs, range = 7 }) {
       const ref = useRef(), inst = useRef();
+
       useEffect(() => {
         if (!ref.current) return;
         const days = [], labels = [];
-        for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d.toDateString()); labels.push(d.toLocaleDateString([], { month: "short", day: "numeric" })); }
+        for (let i = range - 1; i >= 0; i--) { 
+          const d = new Date(); d.setDate(d.getDate() - i); 
+          days.push(d.toDateString()); 
+          // Show only certain labels if range is large
+          if (range <= 7 || i % Math.floor(range / 6) === 0 || i === 0 || i === range - 1) {
+            labels.push(d.toLocaleDateString([], { month: "short", day: "numeric" })); 
+          } else {
+            labels.push("");
+          }
+        }
         const bkt = act => days.map(ds => logs.filter(l => { try { return new Date(l.timestamp || l.created_at).toDateString() === ds && l.action === act; } catch { return false; } }).length);
         if (inst.current) { try { inst.current.destroy(); } catch { } }
         inst.current = new Chart(ref.current, {
@@ -518,7 +531,7 @@
           },
         });
         return () => { try { inst.current?.destroy(); } catch { } };
-      }, [logs]);
+      }, [logs, range]);
       return <canvas ref={ref} style={{ width: "100%", height: "100%" }} />;
     });
 
@@ -572,7 +585,7 @@
     /* ══════════════════════════════════
        BAR CHART
     ══════════════════════════════════ */
-    const BarChart = memo(function BarChart({ data, isAiToolChart }) {
+    const BarChart = memo(function BarChart({ data, isAiToolChart, chartRef }) {
       const ref = useRef(), inst = useRef();
       const C = {
         ChatGPT: "#3fb950", Copilot: "#58a6ff", Claude: "#a371f7", Gemini: "#d29922", DeepSeek: "#e879f9", Perplexity: "#22d3ee", PopupTest: "#39d353", DashboardTest: "#f85149", Unknown: "#484f58", Others: "#6e7681",
@@ -600,7 +613,7 @@
         });
         return () => { try { inst.current?.destroy(); } catch { } };
       }, [data]);
-      return <canvas ref={ref} style={{ width: "100%", height: "100%" }} />;
+      return <canvas ref={chartRef || ref} style={{ width: "100%", height: "100%" }} />;
     });
 
     /* ══════════════════════════════════
@@ -699,6 +712,11 @@
               )}
             </div>
           )}
+
+          <footer style={{ flexShrink: 0, padding: "6px 20px", borderTop: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 10, color: "#58a6ff", fontWeight: 700, letterSpacing: ".5px" }}>PromptGuard v1.0 · Enterprise AI Security</span>
+            <span style={{ fontSize: 10, color: "#484f58", fontWeight: 700 }}>{new Date().toLocaleDateString()}</span>
+          </footer>
         </div>
       );
     }
@@ -726,12 +744,12 @@
       const showRedacted = (log.action === "REDACT") && redactedText && redactedText !== promptText;
 
       return ReactDOM.createPortal(
-        <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 999999, background: "rgba(0,0,0,.78)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifySelf: "center", justifyContent: "center", padding: 24, fontFamily: "'Inter',sans-serif" }}>
+        <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 999999, background: "transparent", display: "flex", alignItems: "center", justifySelf: "center", justifyContent: "center", padding: 24, fontFamily: "'Inter',sans-serif" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 14, maxWidth: 560, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,.9)", overflow: "hidden", animation: "modalIn .18s ease" }}>
             {/* removed coloured top bar */}
 
             {/* header — badge colour matches action */}
-            <div style={{ padding: "14px 20px", background: "#0d1117", borderBottom: "1px solid #30363d", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ padding: "14px 20px", background: "#0d1117", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 16 }}>📝</span>
               <span style={{ fontSize: 14, fontWeight: 800, color: "#f0f6fc", letterSpacing: "-.2px" }}>Prompt Details</span>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
@@ -743,49 +761,53 @@
 
             {/* body */}
             <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-                {[
-                  ["User", log.userId || log.user_id || "—"],
-                  ["Tool", log.tool || "—"],
-                  ["Browser", log.browserName || log.browser_name || "—"],
-                  ["Risk Score", String(log.riskScore ?? log.risk_score ?? 0)],
-                  ["Risk Type", log.highestRiskType || log.highest_risk_type || "NONE"],
-                  ["Time", (log.timestamp || log.created_at || "—").replace("T", " ").replace(/\.\d+.*/, "")],
-                  ["Tokens Used", (log.tokensUsed ?? log.tokens_used ?? 0).toLocaleString()],
-                  ["Tokens Saved", (log.tokensSaved ?? log.tokens_saved ?? 0).toLocaleString()],
-                ].map(([k, v]) => (
-                  <div key={k} style={{ background: "rgba(0,0,0,.2)", borderRadius: 8, padding: "8px 11px", border: "1px solid #30363d" }}>
-                    <div style={{ fontSize: 9, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 3 }}>{k}</div>
-                    <div style={{ fontSize: 12, color: "#f0f6fc", fontWeight: 600, wordBreak: "break-all" }}>{v}</div>
-                  </div>
-                ))}
-              </div>
+              
+              {/* metadata metrics grid — hidden in compact variant */}
+              {log.variant !== "compact" && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                  {[
+                    ["Time", (log.timestamp || log.created_at || "—").replace("T", " ").replace(/\.\d+.*/, "")],
+                    ["Organization", log.userId || log.user_id || "—"],
+                    ["Tool", log.tool || "—"],
+                    ["Browser", log.browserName || log.browser_name || "—"],
+                    ["Cost (S/L)", `$${(log.costSaved ?? log.cost_saved ?? 0).toFixed(4)} / $${(log.costUsed ?? log.cost_used ?? log.cost ?? 0).toFixed(4)}`],
+                    ["Tokens (U/S)", `${(log.tokensUsed ?? log.tokens_used ?? 0).toLocaleString()} / ${(log.tokensSaved ?? log.tokens_saved ?? 0).toLocaleString()}`],
+                  ].map(([k, v]) => (
+                    <div key={k} style={{ background: "rgba(0,0,0,.2)", borderRadius: 8, padding: "8px 11px", border: "1px solid #30363d" }}>
+                      <div style={{ fontSize: 9, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 3 }}>{k}</div>
+                      <div style={{ fontSize: 11, color: "#f0f6fc", fontWeight: 600, wordBreak: "break-all" }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* original prompt */}
               <div style={{ background: "rgba(0,0,0,.2)", borderRadius: 10, overflow: "hidden", border: "1px solid #30363d" }}>
-                <div style={{ padding: "8px 14px", background: "#0d1117", borderBottom: "1px solid #30363d", fontSize: 10, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px" }}>Original Prompt</div>
-                <div style={{ padding: "12px 14px", fontSize: 12, color: promptText ? "#f0f6fc" : "#484f58", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 180, overflowY: "auto", fontStyle: promptText ? "normal" : "italic" }}>
+                <div style={{ padding: "8px 14px", background: "#0d1117", fontSize: 10, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px" }}>Original Prompt</div>
+                <div style={{ padding: "4px 14px 12px", fontSize: 13, color: promptText ? "#f0f6fc" : "#484f58", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 300, overflowY: "auto", fontStyle: promptText ? "normal" : "italic" }}>
                   {promptText || "Prompt text not stored — restart the backend and send a new prompt."}
                 </div>
               </div>
 
-              {/* redacted version */}
-              {showRedacted && (
+              {/* redacted version — hidden in compact */}
+              {showRedacted && log.variant !== "compact" && (
                 <div style={{ background: "rgba(0,0,0,.2)", borderRadius: 10, overflow: "hidden", border: "1px solid #30363d" }}>
-                  <div style={{ padding: "8px 14px", background: "#0d1117", borderBottom: "1px solid #30363d", fontSize: 10, color: theme.accent, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px", display: "flex", alignItems: "center", gap: 6 }}>✏️ Redacted Version</div>
-                  <div style={{ padding: "12px 14px", fontSize: 12, color: "#f0f6fc", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 150, overflowY: "auto" }}>
+                  <div style={{ padding: "8px 14px", background: "#0d1117", fontSize: 10, color: theme.accent, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px", display: "flex", alignItems: "center", gap: 6 }}>✏️ Redacted Version</div>
+                  <div style={{ padding: "4px 14px 12px", fontSize: 13, color: "#f0f6fc", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflowY: "auto" }}>
                     {redactedText}
                   </div>
                 </div>
               )}
 
-              {/* action reason */}
-              <div style={{ background: "rgba(0,0,0,.2)", borderRadius: 10, overflow: "hidden", border: "1px solid #30363d" }}>
-                <div style={{ padding: "8px 14px", background: "#0d1117", borderBottom: "1px solid #30363d", fontSize: 10, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px" }}>Action Reason</div>
-                <div style={{ padding: "12px 14px", fontSize: 12, color: "#8b949e", lineHeight: 1.65 }}>
-                  {log.actionReason || log.action_reason || "No reason provided."}
+              {/* action reason — hidden in compact as requested */}
+              {log.variant !== "compact" && (
+                <div style={{ background: "rgba(0,0,0,.2)", borderRadius: 10, overflow: "hidden", border: "1px solid #30363d" }}>
+                  <div style={{ padding: "8px 14px", background: "#0d1117", fontSize: 10, color: "#6e7681", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".8px" }}>Action Reason</div>
+                  <div style={{ padding: "4px 14px 12px", fontSize: 12, color: "#8b949e", lineHeight: 1.65 }}>
+                    {log.actionReason || log.action_reason || "No reason provided."}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button onClick={onClose}
                 style={{ marginTop: 4, padding: "9px", borderRadius: 8, cursor: "pointer", background: "rgba(255,255,255,.03)", border: "1px solid #30363d", color: "#8b949e", fontSize: 12, fontWeight: 700, fontFamily: "inherit", transition: "all .15s" }}
@@ -1296,21 +1318,39 @@
       const [filter, setFilter] = useState("ALL");
       const [logActionFilter, setLogActionFilter] = useState("ALL");
       const [promptModal, setPromptModal] = useState(null);
+      const [menuOpen, setMenuOpen] = useState(false);
+      const [range, setRange] = useState(7); // State for LineChart range
+      const aiToolsRef = useRef(null); // Ref for AI Tool Usage chart
       const filterRef = useRef("ALL");
       const userRef = useRef(user);
       useEffect(() => { filterRef.current = filter; }, [filter]);
       useEffect(() => { userRef.current = user; }, [user]);
 
+      // handle click outside to close menu
+      useEffect(() => {
+        const fn = e => { if (!e.target.closest("#user-menu-container")) setMenuOpen(false); };
+        window.addEventListener("mousedown", fn); return () => window.removeEventListener("mousedown", fn);
+      }, []);
+
+      const isA = user.role === "ADMIN";
+
+      // Auto-reset filter for Admin when returning to Overview
+      useEffect(() => {
+        if (tab === "overview" && isA && filter !== "ALL") {
+          handleFilter("ALL");
+        }
+      }, [tab, isA, filter]);
+
       const load = useCallback(async () => {
         setLoading(true);
         try {
           const u = userRef.current, f = filterRef.current;
-          const isA = u.role === "ADMIN";
           const logsUrl = isA && f === "ALL"
             ? `${API}/api/analytics/recent-logs?limit=200`
             : `${API}/api/analytics/my-prompts?userId=${f === "ALL" ? u.userId : f}&limit=200`;
           const [sum, tools, risks, logs, users, tokenData] = await Promise.all([
-            fetch(`${API}/api/analytics/risk-summary`).then(r => r.json()).catch(() => ({})),
+            isA ? fetch(`${API}/api/analytics/risk-summary`).then(r => r.json()).catch(() => ({}))
+                : fetch(`${API}/api/analytics/my-stats?userId=${u.userId}`).then(r => r.json()).catch(() => ({})),
             fetch(`${API}/api/analytics/tool-usage`).then(r => r.json()).catch(() => []),
             fetch(`${API}/api/analytics/risk-breakdown`).then(r => r.json()).catch(() => []),
             fetch(logsUrl).then(r => r.json()).catch(() => []),
@@ -1325,35 +1365,33 @@
             users: Array.isArray(users) ? users : [],
             tokenData: typeof tokenData === "object" ? tokenData : {},
           });
-        } catch (e) { console.error(e); }
-        setLoading(false);
+          setLoading(false);
+        } catch (e) { console.error(e); setLoading(false); }
       }, []);
       useEffect(() => { load(); }, []);
       const handleFilter = useCallback(val => { filterRef.current = val; setFilter(val); load(); }, [load]);
 
       const { summary: S, tools, risks, logs, users } = data;
-      const isA = user.role === "ADMIN";
-      const safe = nv(S.allowedPrompts), red = nv(S.redactedPrompts), blk = nv(S.blockedPrompts), crit = nv(S.alertedPrompts), tot = nv(S.totalPrompts);
 
-      const userTot = logs.length;
-      const userSafe = logs.filter(l => l.action === "ALLOW").length;
-      const userRed = logs.filter(l => l.action === "REDACT").length;
-      const userBlk = logs.filter(l => l.action === "BLOCK").length;
-      const userCrit = logs.filter(l => l.action === "ALERT").length;
+      const filteredLogs = useMemo(() => {
+        const now = new Date();
+        const cutoff = new Date(now.getTime() - (range * 24 * 60 * 60 * 1000));
+        return logs.filter(l => new Date(l.timestamp || l.created_at) >= cutoff);
+      }, [logs, range]);
 
-      const displaySafe = isA ? safe : userSafe, displayRed = isA ? red : userRed, displayBlk = isA ? blk : userBlk, displayCrit = isA ? crit : userCrit, displayTot = isA ? tot : userTot;
+      const displaySafe = S.allowed ?? S.allowedPrompts ?? filteredLogs.filter(l => l.action === "ALLOW").length;
+      const displayRed  = S.redacted ?? S.redactedPrompts ?? filteredLogs.filter(l => l.action === "REDACT").length;
+      const displayBlk  = S.blocked ?? S.blockedPrompts ?? filteredLogs.filter(l => l.action === "BLOCK").length;
+      const displayCrit = S.alerted ?? S.alertedPrompts ?? filteredLogs.filter(l => l.action === "ALERT").length;
+      const displayTot  = S.total ?? S.totalPrompts ?? filteredLogs.length;
+
       const br = displayTot > 0 ? Math.round(displayBlk / displayTot * 100) : 0;
-      
-      const tkUsed = nv(S.tokensUsed), tkSaved = nv(S.tokensSaved), cUsed = nv(S.costUsed), cSaved = nv(S.costSaved);
-      const userTkUsed = logs.reduce((a,l) => a + nv(l.tokensUsed), 0);
-      const userTkSaved = logs.reduce((a,l) => a + nv(l.tokensSaved), 0);
-      const userCUsed = logs.reduce((a,l) => a + nv(l.costUsed), 0);
-      const userCSaved = logs.reduce((a,l) => a + nv(l.costSaved), 0);
 
-      const dTkUsed = isA ? tkUsed : userTkUsed;
-      const dTkSaved = isA ? tkSaved : userTkSaved;
-      const dCUsed = isA ? cUsed : userCUsed;
-      const dCSaved = isA ? cSaved : userCSaved;
+      // For users/admins, use the master stats if available, otherwise fallback to log-based calculation
+      const dTkUsed  = S.tokensUsed ?? filteredLogs.reduce((a,l) => a + nv(l.tokensUsed || l.tokens_used || l.tokens), 0);
+      const dTkSaved = S.tokensSaved ?? filteredLogs.reduce((a,l) => a + nv(l.tokensSaved || l.tokens_saved || l.saved), 0);
+      const dCUsed   = S.costUsed ?? filteredLogs.reduce((a,l) => a + nv(l.costUsed || l.cost_used || l.cost), 0);
+      const dCSaved  = S.costSaved ?? filteredLogs.reduce((a,l) => a + nv(l.costSaved || l.cost_saved || l.savings || l.value || l.costSaved), 0);
 
       const comply = [
         { label: "GDPR", status: br < 15 ? "Compliant" : "Needs Review" },
@@ -1364,7 +1402,7 @@
 
       const TABS = isA
         ? [{ k: "overview", l: "Overview" }, { k: "logs", l: "All Logs" }, { k: "analytics", l: "Analytics" }, { k: "tokens", l: "Tokens" }, { k: "policies", l: "Keyword Policies" }, { k: "test", l: "Test Prompt" }]
-        : [{ k: "overview", l: "Overview" }, { k: "logs", l: "My Logs" }, { k: "keywords", l: "My Keywords" }, { k: "test", l: "Test Prompt" }];
+        : [{ k: "overview", l: "Overview" }, { k: "logs", l: "My Logs" }, { k: "tokens", l: "My Tokens" }, { k: "keywords", l: "My Keywords" }, { k: "test", l: "Test Prompt" }];
 
       const px = isMobile ? 12 : 20, gap = 12;
 
@@ -1380,33 +1418,40 @@
                 {isA ? "ADMIN" : "USER"}
               </span>
             </div>
-            {!isMobile && <>
-              <div style={{ width: 1, height: 18, background: "#21262d", marginRight: 14, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, color: "#484f58", marginRight: 18, flexShrink: 0, whiteSpace: "nowrap" }}>Enterprise AI Security Dashboard</span>
-            </>}
             {!isMobile && (
-              <div style={{ display: "flex", gap: 2 }}>
+              <div style={{ display: "flex", gap: 2, marginRight: 20 }}>
                 {TABS.map(t => <button key={t.k} onClick={() => setTab(t.k)} className={`nav-tab${tab === t.k ? " active" : ""}`}>{t.l}</button>)}
               </div>
             )}
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: isMobile ? 7 : 9 }}>
-              {!isMobile && <LiveClock />}
-              <style>{`@keyframes spin-refresh{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}.refresh-spinning{animation:spin-refresh .7s linear}`}</style>
-              <button className="btn btn-ghost" onClick={e => { const ic = e.currentTarget.querySelector('.ref-ic'); if (ic) { ic.classList.add('refresh-spinning'); setTimeout(() => ic.classList.remove('refresh-spinning'), 700); } load(); }}
-                style={{ padding: "4px 11px", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <span className="ref-ic" style={{ display: "inline-block", fontSize: 13, lineHeight: 1 }}>↻</span>
-                {!isMobile && <span>Refresh</span>}
-              </button>
-              {!isMobile && (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 9px", background: "rgba(46,160,67,.08)", border: "1px solid rgba(46,160,67,.2)", borderRadius: 20 }}>
-                  <div className="live-dot" style={{ width: 5, height: 5, borderRadius: "50%", background: "#3fb950" }} />
-                  <span style={{ fontSize: 10, color: "#3fb950", fontWeight: 700, letterSpacing: "1px" }}>LIVE</span>
-                </div>
-              )}
-              <div style={{ padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: isA ? "rgba(163,113,247,.12)" : "rgba(56,139,253,.1)", border: `1px solid ${isA ? "rgba(163,113,247,.3)" : "rgba(56,139,253,.25)"}`, color: isA ? "#a371f7" : "#58a6ff" }}>
-                {isA ? "👑" : "👤"} {isMobile ? user.userId.split("-")[0] : user.userId}
-              </div>
-              <button className="btn btn-danger" onClick={onLogout} style={{ padding: "4px 11px", fontSize: 11 }}>{isMobile ? "Exit" : "Sign Out"}</button>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 18 }}>
+               {/* Time Display Only */}
+               <LiveClock />
+
+               {/* Global Refresh Button */}
+               <button onClick={load} className="btn btn-ghost" 
+                 style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 14px", background: "rgba(88,166,255,0.06)", border: "1px solid rgba(88,166,255,0.15)", borderRadius: 20, color: "#58a6ff", fontSize: 11, fontWeight: 800, transition: "all .2s", letterSpacing: ".5px", textTransform: "uppercase" }}
+                 onMouseEnter={e => { e.currentTarget.style.background = "rgba(88,166,255,0.12)"; e.currentTarget.style.borderColor = "#58a6ff66"; e.currentTarget.style.boxShadow = "0 0 15px rgba(88,166,255,0.2)"; }}
+                 onMouseLeave={e => { e.currentTarget.style.background = "rgba(88,166,255,0.06)"; e.currentTarget.style.borderColor = "rgba(88,166,255,0.15)"; e.currentTarget.style.boxShadow = "none"; }}>
+                 <span className={loading ? "sp" : ""} style={{ fontSize: 14, display: "inline-block" }}>{loading ? "⏳" : "⟳"}</span>
+                 <span>{loading ? "Syncing..." : "Refresh"}</span>
+               </button>
+               
+               {/* User Dropdown */}
+               <div style={{ position: "relative" }} id="user-menu-container">
+                 <button onClick={() => setMenuOpen(!menuOpen)} className="btn btn-ghost" 
+                   style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: isA ? "rgba(163,113,247,0.08)" : "rgba(56,139,253,0.08)", border: `1px solid ${isA ? "rgba(163,113,247,0.2)" : "rgba(56,139,253,0.2)"}`, borderRadius: 20, color: isA ? "#a371f7" : "#58a6ff", fontSize: 13, fontWeight: 700 }}>
+                   <span style={{ fontSize: 16 }}>{isA ? "👑" : "👤"}</span>
+                   <span>{user.name || user.userId}</span>
+                   <span style={{ fontSize: 9, opacity: .6, transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}>▼</span>
+                 </button>
+                 {menuOpen && (
+                   <div className="fade-up" style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 140, background: "#161b22", border: "1px solid #30363d", borderRadius: 8, padding: 4, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", zIndex: 1000 }}>
+                     <button className="btn btn-danger" onClick={onLogout} style={{ width: "100%", padding: "8px", fontSize: 12, textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+                       <span>🚪</span> Sign Out
+                     </button>
+                   </div>
+                 )}
+               </div>
             </div>
             {isMobile && (
               <div style={{ width: "100%", display: "flex", gap: 4, padding: "7px 0 9px", overflowX: "auto", borderTop: "1px solid #21262d", marginTop: 8 }}>
@@ -1421,81 +1466,98 @@
             <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "10px 16px 8px", gap: 8, boxSizing: "border-box" }}>
 
               {/* STAT CARDS - ROW 1 (ALL 7 IN ONE LINE) */}
-              <div style={{ display: "grid", gap: 6, flexShrink: 0, gridTemplateColumns: isMobile ? "repeat(2,1fr)" : isTablet ? "repeat(4,1fr)" : `repeat(${isA ? 7 : 5},1fr)` }}>
+              <div style={{ display: "grid", gap: 10, flexShrink: 0, gridTemplateColumns: isMobile ? "repeat(2,1fr)" : (isA ? "repeat(5, 1fr) 1.5fr" : "repeat(5, 1fr)") }}>
                 {[
+                  { label: "Total Prompts", val: displayTot, color: "#fb8f44", bg: "linear-gradient(135deg,#1e1208,#170e06)", border: "#e3662055", icon: "📊", action: "ALL" },
                   { label: "Safe Prompts", val: displaySafe, color: "#3fb950", bg: "linear-gradient(135deg,#0f2318,#0d1a10)", border: "#2ea04355", icon: "✅", action: "ALLOW" },
                   { label: "Redacted", val: displayRed, color: "#a371f7", bg: "linear-gradient(135deg,#160e22,#110c1a)", border: "#a371f755", icon: "✏️", action: "REDACT" },
                   { label: "Blocked", val: displayBlk, color: "#f85149", bg: "linear-gradient(135deg,#1e0e0d,#160c0c)", border: "#da363355", icon: "🚫", action: "BLOCK" },
-                  { label: "Critical", val: displayCrit, color: "#d29922", bg: "linear-gradient(135deg,#1e1608,#17120a)", border: "#d2992255", icon: "⚡", action: "ALERT" },
-                  { label: isA ? "Total Prompts" : "My Prompts", val: displayTot, color: "#fb8f44", bg: "linear-gradient(135deg,#1e1208,#170e06)", border: "#e3662055", icon: "📊", action: "ALL" },
-                  ...(isA ? [
-                    { label: "Active Users", val: users.length, color: "#c9d1d9", bg: "linear-gradient(135deg,#1c2128,#161b22)", border: "#30363d55", icon: "👥" },
-                    { label: "AI Tools Used", val: tools.length, color: "#79c0ff", bg: "linear-gradient(135deg,#0d1a2e,#111111)", border: "#1f6feb55", icon: "🤖" },
-                  ] : []),
+                  { label: "Critical", val: displayCrit, color: "#fca5a5", bg: "linear-gradient(135deg,#1e1608,#17120a)", border: "#d2992255", icon: "⚡", action: "ALERT" },
                 ].map(({ label, val, color, bg, border, icon, action }) => (
                   <div key={label} className="card-hover fade-up" onClick={() => { if (action) { setLogActionFilter(action); setTab("logs"); } }}
-                    style={{ background: bg, border: `1px solid ${border}`, borderRadius: 9, padding: "10px 12px 0", display: "flex", flexDirection: "column", cursor: action ? "pointer" : "default", transition: "transform .15s, box-shadow .15s", overflow: "hidden" }}
+                    style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: "14px 16px 0", display: "flex", flexDirection: "column", cursor: "pointer", transition: "transform .15s, box-shadow .15s", overflow: "hidden" }}
                     onMouseEnter={e => { if (action) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 20px ${color}28`; } }}
                     onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-                      <span style={{ fontSize: 12 }}>{icon}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: ".3px" }}>{label}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <span style={{ fontSize: 13 }}>{icon}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: ".8px", textTransform: "uppercase" }}>{label}</span>
                     </div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: "#f0f6fc", lineHeight: 1, letterSpacing: "-1.5px", fontVariantNumeric: "tabular-nums", marginBottom: 8 }}>{val.toLocaleString()}</div>
-                    {action && (
-                      <div style={{ marginTop: "auto", padding: "4px 0", borderTop: `1px solid ${color}22`, fontSize: 9, color: color + "99", fontWeight: 700, letterSpacing: ".6px", textAlign: "center" }}>VIEW LOGS →</div>
-                    )}
-                    {!action && <div style={{ height: 5 }} />}
+                    <div style={{ fontSize: 44, fontWeight: 800, color: "#f0f6fc", lineHeight: 1, letterSpacing: "-1.5px", fontVariantNumeric: "tabular-nums", marginBottom: 12 }}>{val.toLocaleString()}</div>
+                    <div style={{ marginTop: "auto", padding: "6px 0", borderTop: `1px solid ${color}22`, fontSize: 10, color: color + "bb", fontWeight: 700, letterSpacing: ".8px", textAlign: "center" }}>VIEW LOGS →</div>
                   </div>
                 ))}
+                
+                {/* ADMIN INSIGHTS CARD */}
+                {isA && (
+                  <div className="card fade-up" style={{ padding: "8px 12px", display: "flex", flexDirection: "column", borderRadius: 9 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, color: "#f85149" }}>📍</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#6e7681", letterSpacing: ".7px", textTransform: "uppercase" }}>Admin</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, flex: 1 }}>
+                      <div onClick={() => { 
+                        setTab("analytics"); 
+                        setTimeout(() => {
+                          const el = document.getElementById("user-directory-card");
+                          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }, 200);
+                      }} style={{ cursor: "pointer", background: "rgba(255,255,255,.02)", border: "1px solid #30363d", borderRadius: 7, padding: "6px", display: "flex", flexDirection: "column" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
+                          <span style={{ fontSize: 12, color: "#a371f7" }}>👥</span>
+                          <span style={{ fontSize: 8, color: "#8b949e", fontWeight: 700, textTransform: "uppercase" }}>Users</span>
+                        </div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#e6edf3" }}>{users.length}</div>
+                        <div style={{ marginTop: "auto", fontSize: 8, color: "#58a6ff", fontWeight: 700 }}>VIEW</div>
+                      </div>
+                      <div onClick={() => { 
+                        setTab("analytics"); 
+                        setTimeout(() => {
+                           const el = document.getElementById("ai-tool-usage-chart");
+                           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 200);
+                      }} style={{ cursor: "pointer", background: "rgba(255,255,255,.02)", border: "1px solid #30363d", borderRadius: 7, padding: "6px", display: "flex", flexDirection: "column" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
+                          <span style={{ fontSize: 12, color: "#fb8f44" }}>🤖</span>
+                          <span style={{ fontSize: 8, color: "#8b949e", fontWeight: 700, textTransform: "uppercase" }}>Tools</span>
+                        </div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#e6edf3" }}>{tools.length}</div>
+                        <div style={{ marginTop: "auto", fontSize: 8, color: "#58a6ff", fontWeight: 700 }}>VIEW</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* STAT CARDS - ROW 2 (TOKENS) - ONLY ADMIN */}
-              {isA && (
-                <div style={{ flexShrink: 0, overflowX: "auto", paddingBottom: 6, marginBottom: 2 }}>
-                  <div style={{ display: "flex", gap: 8, minWidth: "max-content" }}>
-                      {[
-                        { label: "Tokens Used", sub: "Sent to LLMs", val: dTkUsed.toLocaleString(), color: "#58a6ff", bg: "linear-gradient(135deg,#0d1a2e,#0a1420)", border: "#1f6feb55", icon: "🪙", subTab: "used" },
-                        { label: "Tokens Saved", sub: "Blocked from LLMs", val: dTkSaved.toLocaleString(), color: "#39d353", bg: "linear-gradient(135deg,#0b1c10,#09140c)", border: "#2ea04355", icon: "🛡️", subTab: "saved" },
-                        { label: "Cost Used", sub: "Estimated spend", val: `$${dCUsed.toFixed(4)}`, color: "#e879f9", bg: "linear-gradient(135deg,#1a0d2e,#140a20)", border: "#6e40c955", icon: "💰", subTab: "used" },
-                        { label: "Cost Saved", sub: "Estimated savings", val: `$${dCSaved.toFixed(4)}`, color: "#fbbf24", bg: "linear-gradient(135deg,#1c1a0d,#14120a)", border: "#d9770655", icon: "💎", subTab: "saved" },
-                      ].map(({ label, sub, val, color, bg, border, icon, subTab }) => (
-                        <div key={label} onClick={() => { setSubTokenTab(subTab); setTab("tokens"); }}
-                          style={{ background: bg, border: `1px solid ${border}`, borderRadius: 9, padding: "10px 14px", display: "flex", flexDirection: "column", minWidth: 200, flex: 1, cursor: "pointer", transition: "transform .15s" }}
-                          onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
-                          onMouseLeave={e => e.currentTarget.style.transform = ""}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontSize: 16 }}>{icon}</span>
-                            <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: ".5px" }}>{label}</span>
-                          </div>
-                          <div style={{ fontSize: 24, fontWeight: 800, color: "#f0f6fc", marginBottom: 2 }}>{val}</div>
-                          <div style={{ fontSize: 10, color: color + "99", fontWeight: 600 }}>{sub}</div>
-                          <div style={{ marginTop: 6, fontSize: 8, color: color + "55", fontWeight: 800, textAlign: "right" }}>ANALYTICS →</div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
 
               {/* MAIN GRID */}
               <div style={{ flex: 1, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "62% 38%", gap: 8, minHeight: 0 }}>
                 {/* LEFT */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
                   <div className="card fade-up" style={{ flex: "0 0 55%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 14 }}>📈</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Prompt Activity</span>
-                      <span style={{ marginLeft: "auto", fontSize: 11, color: "#484f58", fontWeight: 500 }}>Last 7 days</span>
+                    <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14 }}>📈</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Prompt Activity</span>
+                      </div>
+                      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                        <select value={range} onChange={e => { setRange(parseInt(e.target.value)); load(); }} 
+                          style={{ appearance: "none", background: "transparent", border: "none", color: "#6e7681", fontSize: 11, fontWeight: 500, outline: "none", cursor: "pointer", paddingRight: "14px" }}>
+                          <option value={7} style={{ background: "#0d1117" }}>Last 7 days</option>
+                          <option value={15} style={{ background: "#0d1117" }}>Last 15 days</option>
+                          <option value={30} style={{ background: "#0d1117" }}>Last 30 days</option>
+                        </select>
+                        <span style={{ fontSize: 8, color: "#484f58", marginLeft: "-10px", pointerEvents: "none" }}>▼</span>
+                      </div>
                     </div>
-                    <div style={{ flex: 1, padding: "8px 14px 10px", minHeight: 0, overflow: "hidden", position: "relative" }}><LineChart logs={logs} /></div>
+                    <div style={{ flex: 1, padding: "8px 14px 10px", minHeight: 0, overflow: "hidden", position: "relative" }}><LineChart logs={filteredLogs} range={range} /></div>
                   </div>
                   <div className="card fade-up" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
                     <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 14 }}>⚠️</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Recent Alerts</span>
-                      <span style={{ marginLeft: "auto", fontSize: 11, color: "#484f58" }}>{logs.length} total</span>
+                      <span style={{ marginLeft: "auto", fontSize: 11, color: "#484f58" }}>{displayTot.toLocaleString()} total</span>
                     </div>
-                    {logs.length === 0 ? (
+                    {filteredLogs.length === 0 ? (
                       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "#484f58" }}>
                         <span style={{ fontSize: 24 }}>🎉</span>
                         <span style={{ fontSize: 12, color: "#6e7681" }}>No events yet — send some prompts!</span>
@@ -1503,12 +1565,9 @@
                     ) : (
                       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
-                          <colgroup>
-                            <col style={{ width: "20%" }} />{isA && <col style={{ width: "18%" }} />}<col style={{ width: isA ? "22%" : "28%" }} /><col style={{ width: "18%" }} /><col style={{ width: "18%" }} />
-                          </colgroup>
                           <thead>
                             <tr style={{ background: "rgba(0,0,0,.4)" }}>
-                              {(isA ? ["Timestamp", "User", "Risk Type", "Action", "Browser"] : ["Timestamp", "Risk Type", "Action", "Browser"]).map(h => (
+                              {["TIMESTAMP", "USER", "RISK TYPE", "ACTION", "BROWSER"].map(h => (
                                 <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#6e7681", fontWeight: 600, fontSize: 10, letterSpacing: ".7px", textTransform: "uppercase", borderBottom: "1px solid #21262d", whiteSpace: "nowrap" }}>{h}</th>
                               ))}
                             </tr>
@@ -1516,19 +1575,16 @@
                         </table>
                         <div className="scroll-y" style={{ flex: 1, overflowY: "auto" }}>
                           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
-                            <colgroup>
-                              <col style={{ width: "20%" }} />{isA && <col style={{ width: "18%" }} />}<col style={{ width: isA ? "22%" : "28%" }} /><col style={{ width: "18%" }} /><col style={{ width: "18%" }} />
-                            </colgroup>
                             <tbody>
-                              {logs.map((l, i) => (
+                              {filteredLogs.map((l, i) => (
                                 <tr key={i} className="tr-hover" style={{ borderBottom: "1px solid rgba(255,255,255,.035)" }}>
-                                  <td style={{ padding: "8px 12px", color: "#6e7681", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmtAge(l.timestamp || l.created_at)}</td>
-                                  {isA && <td style={{ padding: "8px 12px", color: "#79c0ff", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.userId || l.user_id || "—"}</td>}
+                                  <td style={{ padding: "8px 12px", color: "#6e7681", fontFamily: "'Inter',sans-serif", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmtAge(l.timestamp || l.created_at)}</td>
+                                  <td style={{ padding: "8px 12px", color: "#79c0ff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.userId || l.user_id || "—"}</td>
                                   <td style={{ padding: "8px 12px" }}>
-                                    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, background: "rgba(255,255,255,.07)", color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.highestRiskType || l.highest_risk_type || "NONE"}</span>
+                                    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.highestRiskType || l.highest_risk_type || "NONE"}</span>
                                   </td>
                                   <td style={{ padding: "8px 12px" }}><Badge action={l.action} /></td>
-                                  <td style={{ padding: "8px 12px", color: "#3fb950", fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.browserName || l.browser_name || "—"}</td>
+                                  <td style={{ padding: "8px 12px", color: "#3fb950", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.browserName || l.browser_name || "—"}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1540,33 +1596,54 @@
                 </div>
                 {/* RIGHT */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
-                  <div className="card fade-up" style={{ flex: "0 0 55%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 14 }}>⚙️</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Top Risk Categories</span>
+                  <div className="card fade-up" style={{ flex: "0 0 60%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
+                    <div style={{ padding: "8px 14px 6px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13 }}>⚙️</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#e6edf3" }}>Top Risk Categories</span>
                     </div>
-                    <div style={{ flex: 1, padding: "8px 12px 10px", minHeight: 0, overflow: "hidden", position: "relative" }}><DonutChart data={risks} /></div>
+                    <div style={{ flex: 1, padding: "4px 8px 6px", minHeight: 0, overflow: "hidden", position: "relative" }}><DonutChart data={risks} /></div>
                   </div>
                   <div className="card fade-up" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 14 }}>⊞</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>AI Tool Usage</span>
+                    <div style={{ padding: "8px 14px 6px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13, color: "#fbbf24" }}>🪙</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#e6edf3" }}>Token Summary</span>
+                      <span onClick={() => setTab("tokens")} style={{ marginLeft: "auto", fontSize: 10, color: "#58a6ff", cursor: "pointer", fontWeight: 600 }}>DETAILS</span>
                     </div>
-                    <div style={{ flex: 1, padding: "8px 12px 10px", minHeight: 0, overflow: "hidden", position: "relative" }}><BarChart data={tools} isAiToolChart={true} /></div>
+                    <div style={{ flex: 1, padding: "4px 8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                      {[
+                        { label: "Used", val: dTkUsed.toLocaleString(), color: "#fb8f44", key: "◆ USED", bd: "rgba(251,143,68,0.2)", tab: "used" },
+                        { label: "Saved", val: dTkSaved.toLocaleString(), color: "#58a6ff", key: "🛡️ SAVED", bd: "rgba(88,166,255,0.2)", tab: "saved" },
+                        { label: "Cost", val: `$${dCUsed.toFixed(4)}`, color: "#fca5a5", key: "💰 COST", bd: "rgba(248,81,73,0.2)", tab: "used" },
+                        { label: "S-Cost", val: `$${dCSaved.toFixed(4)}`, color: "#3fb950", key: "💎 SAVINGS", bd: "rgba(63,185,80,0.2)", tab: "saved" },
+                      ].map(tk => (
+                        <div key={tk.key} onClick={() => { setTab("tokens"); setSubTokenTab(tk.tab); }}
+                          style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${tk.bd}`, borderRadius: 8, padding: "2px 6px", display: "flex", flexDirection: "column", justifyContent: "center", cursor: "pointer", transition: "transform .1s" }}
+                          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.02)"}
+                          onMouseLeave={e => e.currentTarget.style.transform = ""}>
+                          <div style={{ color: tk.color, fontSize: 7, fontWeight: 800, marginBottom: 0, letterSpacing: ".3px" }}>{tk.key}</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: "#f0f6fc", letterSpacing: "-.5px" }}>{tk.val}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* COMPLIANCE STRIP */}
-              <div className="fade-up" style={{ flexShrink: 0, padding: "5px 14px", background: "rgba(33,38,45,.7)", borderRadius: 8, border: "1px solid #21262d", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <div className="fade-up" style={{ flexShrink: 0, padding: "8px 14px", background: "rgba(13,17,23,.8)", borderRadius: 8, border: "1px solid #21262d", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", position: "relative" }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#6e7681", marginRight: 4, whiteSpace: "nowrap" }}>📋 Compliance:</span>
                 {comply.map(c => (
-                  <span key={c.label} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 20, background: c.ok ? "rgba(46,160,67,.12)" : "rgba(210,153,34,.12)", border: `1px solid ${c.ok ? "rgba(46,160,67,.3)" : "rgba(210,153,34,.3)"}`, fontSize: 11, fontWeight: 600, color: c.ok ? "#3fb950" : "#d29922" }}>
-                    <span>{c.ok ? "✓" : "!"}</span>
-                    <span style={{ color: "#c9d1d9", fontWeight: 700 }}>{c.label}</span>
-                    <span style={{ opacity: .8 }}>{c.ok ? "Compliant" : "Review"}</span>
+                  <span key={c.label} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#d29922", padding: "4px 8px" }}>
+                    <span>!</span>
+                    <span style={{ color: "#c9d1d9" }}>{c.label} Review</span>
                   </span>
                 ))}
+                
+                {/* MOVED DATE HERE */}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                   <span style={{ fontSize: 9, color: "#6e7681", fontWeight: 700, letterSpacing: ".5px" }}>DATE:</span>
+                   <span style={{ fontSize: 11, color: "#58a6ff", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace" }}>{new Date().toLocaleDateString('en-GB')}</span>
+                </div>
               </div>
             </div>
           ) : (
@@ -1600,15 +1677,44 @@
                         <CH icon="⚙️" title="Top Risk Categories" />
                         <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><DonutChart data={risks} /></div>
                       </div>
-                      <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+                    <div className="card" id="ai-tool-usage-chart" style={{ display: "flex", flexDirection: "column" }}>
                         <CH icon="🤖" title="AI Tool Usage" />
                         <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><BarChart data={tools} isAiToolChart={true} /></div>
                       </div>
-                      <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-                        <CH icon="📊" title="Actions Distribution" />
-                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}>
-                          {/* REDACT=purple, ALERT=yellow in bar chart */}
-                          <BarChart data={[{ tool: "ALLOW", count: displaySafe }, { tool: "REDACT", count: displayRed }, { tool: "BLOCK", count: displayBlk }, { tool: "ALERT", count: displayCrit }]} />
+                      <div className="card" id="user-directory-card" style={{ display: "flex", flexDirection: "column" }}>
+                        <CH icon="👥" title="User Directory" />
+                        <div style={{ flex: 1, padding: "0 10px", margin: "10px 0", overflowY: "auto", maxHeight: 260 }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                            <thead>
+                              <tr style={{ textAlign: "left", borderBottom: "1px solid #30363d", color: "#8b949e" }}>
+                                <th style={{ padding: "10px 8px" }}>User</th>
+                                <th style={{ padding: "10px 8px" }}>Organization</th>
+                                <th style={{ padding: "10px 8px" }}>Role</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {users.length === 0 ? (
+                                <tr><td colSpan="3" style={{ padding: 20, textAlign: "center", color: "#484f58" }}>No user data available.</td></tr>
+                              ) : users.map(u => (
+                                <tr key={u.user_id} className="tr-hover" style={{ borderBottom: "1px solid #21262d55" }}>
+                                  <td style={{ padding: "10px 8px", color: "#58a6ff", fontWeight: 700 }}>{u.display_name || u.user_id}</td>
+                                  <td style={{ padding: "10px 8px", color: "#c9d1d9" }}>
+                                    {u.user_id === "101" ? "Telecomm" : (u.user_id === "102" ? "Software" : (u.org_name || u.user_id))}
+                                  </td>
+                                  <td style={{ padding: "10px 8px" }}>
+                                    <span style={{ 
+                                      fontSize: 10, padding: "2px 8px", borderRadius: 10, fontWeight: 700,
+                                      background: u.role === "ADMIN" ? "rgba(35,134,54,.1)" : "rgba(139,148,158,.1)", 
+                                      color: u.role === "ADMIN" ? "#3fb950" : "#8b949e", 
+                                      border: "1px solid currentcolor" 
+                                    }}>
+                                      {u.role}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
@@ -1625,8 +1731,12 @@
                       {isA && (
                         <select value={filter} onChange={e => handleFilter(e.target.value)}
                           style={{ marginLeft: "auto", background: "#161b22", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: 8, padding: "7px 12px", fontSize: 12, outline: "none", cursor: "pointer", fontFamily: "inherit" }}>
-                          <option value="ALL">All Users</option>
-                          {users.map(u => <option key={u.user_id} value={u.user_id}>{u.display_name || u.user_id}</option>)}
+                          <option value="ALL">All Environments (Shared)</option>
+                          {users.map(u => (
+                            <option key={u.user_id} value={u.user_id}>
+                              {u.display_name || u.user_id} {u.org_name ? `(${u.org_name})` : ""}
+                            </option>
+                          ))}
                         </select>
                       )}
                     </div>
@@ -1674,12 +1784,12 @@
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                           <thead style={{ position: "sticky", top: 0, background: "#161b22", zIndex: 1, borderBottom: "1px solid #21262d" }}>
                             <tr>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "15%" }}>Time</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "15%" }}>User</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "15%" }}>Tool</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "35%" }}>Prompt</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "10%" }}>{subTokenTab === "used" ? "Tokens" : "Saved"}</th>
-                              <th style={{ textAlign: "left", padding: 14, color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px", width: "10%" }}>{subTokenTab === "used" ? "Cost" : "Value"}</th>
+                              <th style={{ textAlign: "left", padding: "12px 14px", color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>Time</th>
+                              <th style={{ textAlign: "left", padding: "12px 14px", color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>User</th>
+                              <th style={{ textAlign: "left", padding: "12px 14px", color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>Tool</th>
+                              <th style={{ textAlign: "left", padding: "12px 14px", color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>{subTokenTab === "used" ? "Tokens" : "Saved"}</th>
+                              <th style={{ textAlign: "left", padding: "12px 14px", color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>{subTokenTab === "used" ? "Cost" : "Value"}</th>
+                              <th style={{ textAlign: "right", padding: "12px 14px", color: "#8b949e", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: ".5px" }}>Prompt</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1690,17 +1800,19 @@
                                 <td style={{ padding: 14, color: "#8b949e", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{fmtAge(l.timestamp)}</td>
                                 <td style={{ padding: 14, color: "#58a6ff", fontWeight: 700, whiteSpace: "nowrap" }}>{l.userId}</td>
                                 <td style={{ padding: 14, color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.tool}</td>
-                                <td style={{ padding: 14, color: "#c9d1d9", whiteSpace: "nowrap" }}>
-                                  {l.originalPrompt ? (
-                                    <div title="Click to view full prompt" onClick={() => setPromptModal(l)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, cursor: "pointer", transition: "all .2s" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"} onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
-                                      <span style={{ fontSize: 13 }}>📄</span>
-                                      <span style={{ fontSize: 11, fontWeight: 600, color: "#8b949e" }}>Original Prompt</span>
-                                    </div>
-                                  ) : <span style={{ color: "#484f58" }}>—</span>}
-                                </td>
                                 <td style={{ padding: 14, color: "#c9d1d9", fontWeight: 600 }}>{nv(l.tokens || l.saved).toLocaleString()}</td>
                                 <td style={{ padding: 14, color: subTokenTab === "used" ? "#fca5a5" : "#39d353", fontWeight: 800, fontSize: 13 }}>
                                     {subTokenTab === "used" ? "-" : "+"}${nv(l.cost || l.value).toFixed(4)}
+                                </td>
+                                <td style={{ padding: "8px 14px", color: "#c9d1d9", whiteSpace: "nowrap", textAlign: "right" }}>
+                                  {l.originalPrompt ? (
+                                    <div title="View Prompt Details" onClick={() => setPromptModal({ ...l, variant: "compact" })} 
+                                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, cursor: "pointer", transition: "all .15s" }} 
+                                      onMouseEnter={e => { e.currentTarget.style.background = "rgba(56,139,253,0.15)"; e.currentTarget.style.borderColor = "#58a6ff"; }} 
+                                      onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}>
+                                      <span style={{ fontSize: 16 }}>📄</span>
+                                    </div>
+                                  ) : <span style={{ color: "#484f58" }}>—</span>}
                                 </td>
                               </tr>
                             ))}
@@ -1726,11 +1838,7 @@
               </div>
             </div>
           )}
-
-          <footer style={{ flexShrink: 0, padding: "8px 20px", borderTop: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 11, color: "#484f58" }}>PromptGuard v1.0 · Enterprise AI Security</span>
-            <span style={{ fontSize: 11, color: "#484f58", fontFamily: "'JetBrains Mono',monospace" }}>{new Date().toLocaleDateString()}</span>
-          </footer>
+          {promptModal && <PromptModal log={promptModal} onClose={() => setPromptModal(null)} Badge={Badge} />}
         </div>
       );
     }

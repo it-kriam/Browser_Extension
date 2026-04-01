@@ -23,14 +23,13 @@ import java.util.List;
  *
  * ALL 4 COLUMN → ACTION mappings:
  *
- *   block_col    = true  →  score=100  →  Action=BLOCK,  RiskLevel=CRITICAL
- *   critial_col  = true  →  score=85   →  Action=BLOCK,  RiskLevel=CRITICAL
- *   redacted_col = true  →  score=75   →  Action=REDACT, RiskLevel=HIGH
+ *   block_col    = true  →  score=100  →  Action=BLOCK,   RiskLevel=CRITICAL
+ *   critial_col  = true  →  score=55   →  Action=ALERT,   RiskLevel=MEDIUM (Critical label)
+ *   redacted_col = true  →  score=75   →  Action=REDACT,  RiskLevel=HIGH
  *   allow_col    = true  →  no result  →  prompt passes through (ALLOW)
  *
  * BLOCK:
  *   block_col   → absolute block (score=100)
- *   critial_col → critical block (score=85)
  *   Both result in Action.BLOCK. Prompt cannot be sent.
  */
 @Component
@@ -51,6 +50,12 @@ public class UserKeywordDetector {
         String lowerPrompt = prompt.toLowerCase();
 
         for (UserKeywordPolicy policy : policies) {
+            // Check sub_user isolation: row must either match current subUser or be '*' (global for org)
+            boolean isGlobal = "*".equals(policy.getSubUser());
+            boolean isMatch  = subUser.equalsIgnoreCase(policy.getSubUser());
+
+            if (!isGlobal && !isMatch) continue;
+
             String[] keywords = policy.getKeywordList().split(",");
 
             for (String kw : keywords) {
@@ -68,13 +73,13 @@ public class UserKeywordDetector {
                     String actionStr = "NONE";
 
                     if (policy.isBlockCol()) {
-                        score     = 100;   // → PolicyEngine BLOCK (RiskLevel=CRITICAL)
+                        score     = 100;   // → PolicyEngine BLOCK
                         actionStr = "BLOCK";
                     } else if (policy.isCriticalCol()) {
-                        score     = 85;    // → PolicyEngine BLOCK (RiskLevel=CRITICAL)
+                        score     = 55;    // → PolicyEngine ALERT (Critical label)
                         actionStr = "CRITICAL";
                     } else if (policy.isRedactedCol()) {
-                        score     = 75;    // → PolicyEngine REDACT (RiskLevel=HIGH)
+                        score     = 75;    // → PolicyEngine REDACT
                         actionStr = "REDACT";
                     }
 

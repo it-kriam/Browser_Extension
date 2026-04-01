@@ -55,7 +55,7 @@ public class SourceCodeDetector {
 
         // Java class / interface / enum
         if (JAVA_CLASS.matcher(prompt).find()) {
-            results.add(new DetectionResult(RiskType.SOURCE_CODE, 65,
+            results.add(new DetectionResult(RiskType.SOURCE_CODE, 70,
                 "Source code detected: Java class/interface",
                 snippet(prompt, JAVA_CLASS)));
         }
@@ -91,7 +91,7 @@ public class SourceCodeDetector {
         }
         // SQL DELETE / DROP — slightly higher since destructive
         if (SQL_DELETE.matcher(prompt).find() || SQL_DROP.matcher(prompt).find()) {
-            results.add(new DetectionResult(RiskType.SOURCE_CODE, 70,
+            results.add(new DetectionResult(RiskType.SOURCE_CODE, 75,
                 "Source code detected: destructive SQL (DELETE/DROP)",
                 "SQL query"));
         }

@@ -41,13 +41,13 @@ public class PhiDetector {
 
     // Medical Record Number: MRN followed by digits (common hospital format)
     private static final Pattern MRN = Pattern.compile(
-        "\\b(MRN|mrn|medical record|patient id|patient#)[:\\s#-]*\\d{4,12}\\b",
+        "\\b(MRN|mrn|medical record|patient id|patient#|record number|chart number)[:\\s#-]*[A-Z0-9]{4,15}\\b",
         Pattern.CASE_INSENSITIVE);
 
     // ICD-10 diagnosis codes: Letter + 2 digits + optional decimal + more digits
     // e.g. E11.9 (Type 2 diabetes), J18.9 (Pneumonia), C50.911 (Breast cancer)
     private static final Pattern ICD10 = Pattern.compile(
-        "\\b[A-TV-Z][0-9]{2}(\\.?[A-Z0-9]{1,4})?\\b");
+        "\\b[A-Z][0-9]{2}(\\.?[A-Z0-9]{1,6})?\\b");
 
     // NPI (National Provider Identifier): 10-digit number preceded by NPI label
     private static final Pattern NPI = Pattern.compile(
@@ -60,9 +60,9 @@ public class PhiDetector {
         + "(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}[/-]\\d{1,2}[/-]\\d{1,2})",
         Pattern.CASE_INSENSITIVE);
 
-    // Health insurance / policy number
+    // Health insurance / policy number: Alphanumeric 6-25 characters
     private static final Pattern INSURANCE = Pattern.compile(
-        "\\b(insurance policy|health plan|member id|policy number|group number)[:\\s#-]*[A-Z0-9]{6,20}\\b",
+        "\\b(insurance policy|health plan|member id|policy number|group number)[:\\s#-]*[A-Z0-9\\-]{6,25}\\b",
         Pattern.CASE_INSENSITIVE);
 
     // ── Keyword-based identifiers ─────────────────────────────────────────

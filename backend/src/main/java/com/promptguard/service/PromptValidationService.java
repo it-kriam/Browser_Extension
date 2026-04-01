@@ -19,6 +19,11 @@ public class PromptValidationService {
     private final SourceCodeDetector  sourceCodeDetector;
     private final KeywordDetector     keywordDetector;
     private final UserKeywordDetector userKeywordDetector;
+    private final CryptocurrencyDetector cryptocurrencyDetector;
+    private final IpAddressDetector ipAddressDetector;
+    private final JwtDetector        jwtDetector;
+    private final DatabaseConnectionDetector databaseConnectionDetector;
+    private final CloudProviderDetector cloudProviderDetector;
     private final UserRepository      userRepository;
 
     public PromptValidationService(SecretDetector secretDetector,
@@ -27,6 +32,11 @@ public class PromptValidationService {
                                    SourceCodeDetector sourceCodeDetector,
                                    KeywordDetector keywordDetector,
                                    UserKeywordDetector userKeywordDetector,
+                                   CryptocurrencyDetector cryptocurrencyDetector,
+                                   IpAddressDetector ipAddressDetector,
+                                   JwtDetector jwtDetector,
+                                   DatabaseConnectionDetector databaseConnectionDetector,
+                                   CloudProviderDetector cloudProviderDetector,
                                    UserRepository userRepository) {
         this.secretDetector      = secretDetector;
         this.piiDetector         = piiDetector;
@@ -34,6 +44,11 @@ public class PromptValidationService {
         this.sourceCodeDetector  = sourceCodeDetector;
         this.keywordDetector     = keywordDetector;
         this.userKeywordDetector = userKeywordDetector;
+        this.cryptocurrencyDetector = cryptocurrencyDetector;
+        this.ipAddressDetector   = ipAddressDetector;
+        this.jwtDetector         = jwtDetector;
+        this.databaseConnectionDetector = databaseConnectionDetector;
+        this.cloudProviderDetector = cloudProviderDetector;
         this.userRepository      = userRepository;
     }
 
@@ -46,6 +61,11 @@ public class PromptValidationService {
         all.addAll(phiDetector.detect(prompt));
         all.addAll(sourceCodeDetector.detect(prompt));
         all.addAll(keywordDetector.detect(prompt));
+        all.addAll(cryptocurrencyDetector.detect(prompt));
+        all.addAll(ipAddressDetector.detect(prompt));
+        all.addAll(jwtDetector.detect(prompt));
+        all.addAll(databaseConnectionDetector.detect(prompt));
+        all.addAll(cloudProviderDetector.detect(prompt));
 
         // ── PHASE 2: Org-specific keyword check ───────────────────────────────
         // Resolve userId → org_id so policy lookup uses the org_id stored in

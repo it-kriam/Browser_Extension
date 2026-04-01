@@ -43,18 +43,18 @@ public class PiiDetector {
     private static final Pattern PAN = Pattern.compile(
         "\\b[A-Z]{5}[0-9]{4}[A-Z]\\b");
 
-    // US Social Security Number: 3-2-4 digit format
+    // US Social Security Number: 3-2-4 digit format or continuous digits
     private static final Pattern SSN = Pattern.compile(
-        "\\b\\d{3}-\\d{2}-\\d{4}\\b");
+        "\\b\\d{3}[\\s\\-]?\\d{2}[\\s\\-]?\\d{4}\\b");
 
-    // Credit card: 13-16 digits, optionally separated by space or hyphen
+    // Credit card: 13-19 digits, optionally separated by space or hyphen
     // Uses tighter word-boundary approach to avoid matching plain phone numbers
     private static final Pattern CREDIT = Pattern.compile(
         "\\b(?:4[0-9]{12}(?:[0-9]{3})?|" +          // Visa 13/16
         "5[1-5][0-9]{14}|" +                          // MasterCard
         "3[47][0-9]{13}|" +                           // Amex 15
         "6(?:011|5[0-9]{2})[0-9]{12}|" +             // Discover
-        "(?:\\d[ -]?){13,16})\\b");                   // generic spaced
+        "(?:\\d[ -]?){13,19})\\b");                   // generic spaced
 
     public List<DetectionResult> detect(String prompt) {
         List<DetectionResult> results = new ArrayList<>();

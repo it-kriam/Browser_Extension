@@ -14,20 +14,14 @@ public class SecretDetector {
 
     // Patterns that indicate secrets/credentials
     private static final List<Pattern> SECRET_PATTERNS = List.of(
-            Pattern.compile("password\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("passwd\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("pwd\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("api[_-]?key\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("secret[_-]?key\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("access[_-]?token\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("auth[_-]?token\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
+            // Basic key-value detection for secrets
+            Pattern.compile("(?:password|passwd|pwd|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key)(\\s+is)?\\s*[=:]?\\s*\\S+", Pattern.CASE_INSENSITIVE),
             Pattern.compile("bearer\\s+[A-Za-z0-9\\-._~+/]+=*", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("private[_-]?key\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE),
             Pattern.compile("jdbc:[a-z]+://[^\\s]*password=[^\\s&]+", Pattern.CASE_INSENSITIVE),
             Pattern.compile("-----BEGIN (RSA |EC |)PRIVATE KEY-----"),
-            Pattern.compile("ghp_[A-Za-z0-9]{36}"), // GitHub token
-            Pattern.compile("sk-[A-Za-z0-9]{48}"), // OpenAI key
-            Pattern.compile("AKIA[0-9A-Z]{16}") // AWS key
+            Pattern.compile("ghp_[A-Za-z0-9]{30,60}"), // GitHub token
+            Pattern.compile("sk-[A-Za-z0-9]{20,80}"),  // OpenAI key
+            Pattern.compile("AKIA[0-9A-Z]{12,25}")    // AWS key
     );
 
     public List<DetectionResult> detect(String prompt) {

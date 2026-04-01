@@ -155,6 +155,16 @@ public class DatabaseInitializer implements ApplicationRunner {
             log.warn("Legacy log patch failed: {}", e.getMessage());
         }
 
+        // ── Migration: audit_logs user_id slugs → numeric org_id ──────────────
+        try {
+            int k = db.update("UPDATE audit_logs SET user_id='101' WHERE user_id IN ('kushal-user', 'Telecomm')");
+            int r = db.update("UPDATE audit_logs SET user_id='102' WHERE user_id IN ('rohan-user', 'Software')");
+            if (k > 0) log.info("Migration: {} kushal-user/Telecomm audit logs → 101", k);
+            if (r > 0) log.info("Migration: {} rohan-user/Software audit logs → 102", r);
+        } catch (Exception e) {
+            log.warn("audit_logs user_id migration: {}", e.getMessage());
+        }
+
         // ── Summary ───────────────────────────────────────────────────────────
         try {
             Long u = db.queryForObject("SELECT COUNT(*) FROM users", Long.class);

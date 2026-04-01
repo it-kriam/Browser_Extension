@@ -19,6 +19,7 @@
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
 
     html {
@@ -115,6 +116,7 @@
 
     .fade-up {
       animation: fadeUp .4s cubic-bezier(.22, 1, .36, 1) both;
+      background-color: transparent;
     }
 
     .d1 {
@@ -158,16 +160,24 @@
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 10px;
+      user-select: none;
     }
 
     .card-hover {
-      transition: border-color .18s, box-shadow .18s, transform .18s;
+      transition: border-color .18s, box-shadow .18s, transform .18s, background .1s;
+      user-select: none;
     }
 
     .card-hover:hover {
       border-color: #484f58;
       box-shadow: 0 4px 24px rgba(0, 0, 0, .5);
       transform: translateY(-1px);
+    }
+
+    .card-hover:active {
+      transform: translateY(0px) scale(0.99);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+      background: rgba(255,255,255,.03) !important;
     }
 
     .stat-card {
@@ -200,6 +210,11 @@
     .nav-tab:hover {
       background: rgba(255, 255, 255, .06);
       color: #c9d1d9;
+    }
+
+    .nav-tab:active {
+      background: rgba(255, 255, 255, .04);
+      transform: scale(0.98);
     }
 
     .nav-tab.active {
@@ -247,6 +262,12 @@
       font-family: 'Inter', sans-serif;
       font-weight: 600;
       transition: all .18s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn:active {
+      transform: scale(0.97) !important;
+      opacity: 0.85;
     }
 
     .btn-primary {
@@ -320,6 +341,25 @@
       padding: 6px 12px;
       border-radius: 8px;
       font-size: 12px;
+    }
+
+    ::selection {
+      background: rgba(88, 166, 255, .25);
+      color: #f0f6fc;
+    }
+
+    button, [role="button"] {
+      background: transparent;
+      outline: none;
+    }
+
+    button:focus-visible {
+      outline: 2px solid rgba(88, 166, 255, .5);
+      outline-offset: 2px;
+    }
+
+    a, a:visited {
+      color: inherit;
     }
   </style>
 </head>
@@ -737,7 +777,7 @@
     /* ══════════════════════════════════
        PROMPT MODAL
     ══════════════════════════════════ */
-    function PromptModal({ log, onClose, Badge }) {
+    function PromptModal({ log, onClose, Badge, orgLabel }) {
       const theme = getTheme(log.action);
       const promptText = log.originalPrompt || log.original_prompt || log.prompt || log.promptText || log.prompt_text || null;
       const redactedText = log.redactedPrompt || log.redacted_prompt || null;
@@ -767,7 +807,7 @@
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                   {[
                     ["Time", (log.timestamp || log.created_at || "—").replace("T", " ").replace(/\.\d+.*/, "")],
-                    ["Organization", log.userId || log.user_id || "—"],
+                    ["Organization", orgLabel(log.userId || log.user_id) || "—"],
                     ["Tool", log.tool || "—"],
                     ["Browser", log.browserName || log.browser_name || "—"],
                     ["Cost (S/L)", `$${(log.costSaved ?? log.cost_saved ?? 0).toFixed(4)} / $${(log.costUsed ?? log.cost_used ?? log.cost ?? 0).toFixed(4)}`],
@@ -824,7 +864,7 @@
     /* ══════════════════════════════════
        ALL LOGS TAB
     ══════════════════════════════════ */
-    function AllLogsTab({ logs, isA, filter, handleFilter, users, logActionFilter, setLogActionFilter, fmtAge, nv, Badge }) {
+    function AllLogsTab({ logs, isA, filter, handleFilter, users, logActionFilter, setLogActionFilter, fmtAge, nv, Badge, orgLabel }) {
       const [promptModal, setPromptModal] = useState(null);
 
       const ACTION_FILTERS = [
@@ -839,7 +879,7 @@
 
       return (
         <div className="fade-up">
-          {promptModal && <PromptModal log={promptModal} onClose={() => setPromptModal(null)} Badge={Badge} />}
+          {promptModal && <PromptModal log={promptModal} onClose={() => setPromptModal(null)} Badge={Badge} orgLabel={orgLabel} />}
 
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
             <div>
@@ -889,7 +929,7 @@
                   return (
                     <tr key={i} className="tr-hover" style={{ borderBottom: "1px solid rgba(255,255,255,.025)" }}>
                       <td style={{ padding: "9px 14px", color: "#6e7681", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{fmtAge(l.timestamp || l.created_at)}</td>
-                      {isA && <td style={{ padding: "9px 14px", color: "#79c0ff", fontWeight: 600 }}>{l.userId || l.user_id || "—"}</td>}
+                      {isA && <td style={{ padding: "9px 14px", color: "#79c0ff", fontWeight: 600 }}>{orgLabel(l.userId || l.user_id)}</td>}
                       <td style={{ padding: "9px 14px" }}>
                         <span style={{ background: "rgba(56,139,253,.1)", border: "1px solid rgba(56,139,253,.2)", color: "#58a6ff", borderRadius: 5, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>{l.tool || "—"}</span>
                       </td>
@@ -1009,7 +1049,7 @@
          1. Add New Keyword Policy form   ← TOP
          [ everything below is commented out as requested ]
     ══════════════════════════════════ */
-    function KeywordPoliciesPanel({ API }) {
+    function KeywordPoliciesPanel({ API, orgLabel }) {
       const [policies, setPolicies] = useState([]);
       const [loading, setLoading] = useState(true);
       /* orgFilter: "ALL" | "kushal-user" | "rohan-user" | ... */
@@ -1020,37 +1060,20 @@
       });
       const [saving, setSaving] = useState(false);
       const [msg, setMsg] = useState(null);
-      /* userId → orgName map for display (e.g. "kushal-user" → "Telecomm") */
-      const [userOrgMap, setUserOrgMap] = useState({});
 
       const load = () => {
         setLoading(true);
         Promise.all([
           fetch(`${API}/api/v1/policies`).then(r => r.json()),
-          fetch(`${API}/api/v1/users`).then(r => r.json()),
-        ]).then(([pols, users]) => {
+        ]).then(([pols]) => {
           setPolicies(Array.isArray(pols) ? pols : []);
-          /* Build map: userId → orgName */
-          const map = {};
-          if (Array.isArray(users)) {
-            users.forEach(u => {
-              const uid = u.userId || u.user_id;
-              const oName = u.orgName || u.org_name || u.organizationName;
-              const oId = u.orgId || u.org_id || u.organizationId;
-              if (oName) {
-                if (uid) map[uid] = oName;
-                if (oId) map[String(oId)] = oName;
-              }
-            });
-          }
-          setUserOrgMap(map);
           setLoading(false);
         }).catch(() => setLoading(false));
       };
       useEffect(() => { load(); }, []);
 
       /* Returns orgName if known, otherwise falls back to userId */
-      const orgLabel = (userId) => userOrgMap[userId] || userId;
+      // note: orgLabel is passed as prop
 
       /* Derive distinct orgs from ALL policies */
       const allOrgs = [...new Set(policies.map(p => p.userId || p.user_id))].filter(Boolean).sort();
@@ -1255,6 +1278,11 @@
               ))}
             </div>
             <div style={{ padding: "0 16px 14px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ width: "100%", fontSize: 10, color: "#6e7681", marginBottom: 6, display: "flex", gap: 14 }}>
+                <span><strong>BLOCK:</strong> 80-100</span>
+                <span><strong>REDACT:</strong> 60-79</span>
+                <span><strong>CRITICAL:</strong> 40-59</span>
+              </div>
               <span style={{ fontSize: 11, color: "#6e7681" }}>Action:</span>
               {[
                 { key: "blockCol", label: "BLOCK", color: "#fca5a5", bg: "#7f1d1d" },
@@ -1312,6 +1340,7 @@
     function Dashboard({ user, onLogout }) {
       const { isDesktop, isTablet, isMobile } = useBreakpoint();
       const [data, setData] = useState({ summary: {}, tools: [], risks: [], logs: [], users: [] });
+      const [orgMap, setOrgMap] = useState({});
       const [loading, setLoading] = useState(false);
       const [tab, setTab] = useState("overview");
       const [subTokenTab, setSubTokenTab] = useState("used");
@@ -1365,11 +1394,36 @@
             users: Array.isArray(users) ? users : [],
             tokenData: typeof tokenData === "object" ? tokenData : {},
           });
+
+          // Build Org Map: userId/orgId -> orgName
+          const map = {};
+          if (Array.isArray(users)) {
+            users.forEach(u => {
+              const uid = u.userId || u.user_id;
+              const oName = u.orgName || u.org_name || u.organizationName;
+              const oId = u.orgId || u.org_id || u.organizationId;
+              if (oName) {
+                if (uid) map[uid] = oName;
+                if (oId) map[String(oId)] = oName;
+              }
+            });
+          }
+          setOrgMap(map);
           setLoading(false);
         } catch (e) { console.error(e); setLoading(false); }
       }, []);
       useEffect(() => { load(); }, []);
       const handleFilter = useCallback(val => { filterRef.current = val; setFilter(val); load(); }, [load]);
+
+      const orgLabel = useCallback((id) => {
+        if (!id) return "Unknown";
+        const sid = String(id);
+        if (sid === "101") return "Telecomm";
+        if (sid === "102") return "Software";
+        return orgMap[sid] || id;
+      }, [orgMap]);
+
+      useEffect(() => { setPromptModal(null); }, [tab]); // Close prompt modal on tab switch
 
       const { summary: S, tools, risks, logs, users } = data;
 
@@ -1379,19 +1433,26 @@
         return logs.filter(l => new Date(l.timestamp || l.created_at) >= cutoff);
       }, [logs, range]);
 
-      const displaySafe = S.allowed ?? S.allowedPrompts ?? filteredLogs.filter(l => l.action === "ALLOW").length;
-      const displayRed  = S.redacted ?? S.redactedPrompts ?? filteredLogs.filter(l => l.action === "REDACT").length;
-      const displayBlk  = S.blocked ?? S.blockedPrompts ?? filteredLogs.filter(l => l.action === "BLOCK").length;
-      const displayCrit = S.alerted ?? S.alertedPrompts ?? filteredLogs.filter(l => l.action === "ALERT").length;
-      const displayTot  = S.total ?? S.totalPrompts ?? filteredLogs.length;
+      const useLocalStats = isA && filter !== "ALL";
+
+      const displaySafe = useLocalStats ? filteredLogs.filter(l => l.action === "ALLOW").length : (S.allowed ?? S.allowedPrompts ?? filteredLogs.filter(l => l.action === "ALLOW").length);
+      const displayRed  = useLocalStats ? filteredLogs.filter(l => l.action === "REDACT").length : (S.redacted ?? S.redactedPrompts ?? filteredLogs.filter(l => l.action === "REDACT").length);
+      const displayBlk  = useLocalStats ? filteredLogs.filter(l => l.action === "BLOCK").length : (S.blocked ?? S.blockedPrompts ?? filteredLogs.filter(l => l.action === "BLOCK").length);
+      const displayCrit = useLocalStats ? filteredLogs.filter(l => l.action === "ALERT").length : (S.alerted ?? S.alertedPrompts ?? filteredLogs.filter(l => l.action === "ALERT").length);
+      const displayTot  = useLocalStats ? filteredLogs.length : (S.total ?? S.totalPrompts ?? filteredLogs.length);
 
       const br = displayTot > 0 ? Math.round(displayBlk / displayTot * 100) : 0;
 
-      // For users/admins, use the master stats if available, otherwise fallback to log-based calculation
-      const dTkUsed  = S.tokensUsed ?? filteredLogs.reduce((a,l) => a + nv(l.tokensUsed || l.tokens_used || l.tokens), 0);
-      const dTkSaved = S.tokensSaved ?? filteredLogs.reduce((a,l) => a + nv(l.tokensSaved || l.tokens_saved || l.saved), 0);
-      const dCUsed   = S.costUsed ?? filteredLogs.reduce((a,l) => a + nv(l.costUsed || l.cost_used || l.cost), 0);
-      const dCSaved  = S.costSaved ?? filteredLogs.reduce((a,l) => a + nv(l.costSaved || l.cost_saved || l.savings || l.value || l.costSaved), 0);
+      // Token analytics local calculation
+      const tkLogsRaw = data.tokenData?.usedLogs || [];
+      const svLogsRaw = data.tokenData?.savedLogs || [];
+      const fltUsed = tkLogsRaw;
+      const fltSaved = svLogsRaw;
+
+      const dTkUsed  = useLocalStats ? fltUsed.reduce((a,l) => a + nv(l.tokens), 0) : (S.tokensUsed ?? filteredLogs.reduce((a,l) => a + nv(l.tokensUsed || l.tokens_used || l.tokens), 0));
+      const dTkSaved = useLocalStats ? fltSaved.reduce((a,l) => a + nv(l.saved), 0) : (S.tokensSaved ?? filteredLogs.reduce((a,l) => a + nv(l.tokensSaved || l.tokens_saved || l.saved), 0));
+      const dCUsed   = useLocalStats ? fltUsed.reduce((a,l) => a + nv(l.cost), 0) : (S.costUsed ?? filteredLogs.reduce((a,l) => a + nv(l.costUsed || l.cost_used || l.cost), 0));
+      const dCSaved  = useLocalStats ? fltSaved.reduce((a,l) => a + nv(l.value), 0) : (S.costSaved ?? filteredLogs.reduce((a,l) => a + nv(l.costSaved || l.cost_saved || l.savings || l.value || l.costSaved), 0));
 
       const comply = [
         { label: "GDPR", status: br < 15 ? "Compliant" : "Needs Review" },
@@ -1399,6 +1460,7 @@
         { label: "DPDP Act", status: displayRed > 0 ? "Compliant" : "Needs Review" },
         { label: "SOC 2", status: "Compliant" },
       ];
+
 
       const TABS = isA
         ? [{ k: "overview", l: "Overview" }, { k: "logs", l: "All Logs" }, { k: "analytics", l: "Analytics" }, { k: "tokens", l: "Tokens" }, { k: "policies", l: "Keyword Policies" }, { k: "test", l: "Test Prompt" }]
@@ -1540,7 +1602,7 @@
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Prompt Activity</span>
                       </div>
                       <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                        <select value={range} onChange={e => { setRange(parseInt(e.target.value)); load(); }} 
+                        <select value={range} onChange={e => setRange(parseInt(e.target.value))} 
                           style={{ appearance: "none", background: "transparent", border: "none", color: "#6e7681", fontSize: 11, fontWeight: 500, outline: "none", cursor: "pointer", paddingRight: "14px" }}>
                           <option value={7} style={{ background: "#0d1117" }}>Last 7 days</option>
                           <option value={15} style={{ background: "#0d1117" }}>Last 15 days</option>
@@ -1652,7 +1714,7 @@
 
                 {tab === "logs" && (
                   <AllLogsTab logs={logs} isA={isA} filter={filter} handleFilter={handleFilter} users={users}
-                    logActionFilter={logActionFilter} setLogActionFilter={setLogActionFilter} fmtAge={fmtAge} nv={nv} Badge={Badge} />
+                    logActionFilter={logActionFilter} setLogActionFilter={setLogActionFilter} fmtAge={fmtAge} nv={nv} Badge={Badge} orgLabel={orgLabel} />
                 )}
 
                 {tab === "analytics" && (
@@ -1699,7 +1761,7 @@
                                 <tr key={u.user_id} className="tr-hover" style={{ borderBottom: "1px solid #21262d55" }}>
                                   <td style={{ padding: "10px 8px", color: "#58a6ff", fontWeight: 700 }}>{u.display_name || u.user_id}</td>
                                   <td style={{ padding: "10px 8px", color: "#c9d1d9" }}>
-                                    {u.user_id === "101" ? "Telecomm" : (u.user_id === "102" ? "Software" : (u.org_name || u.user_id))}
+                                    {orgLabel(String(u.orgId || u.org_id || u.user_id))}
                                   </td>
                                   <td style={{ padding: "10px 8px" }}>
                                     <span style={{ 
@@ -1762,7 +1824,7 @@
                           {subTokenTab === "used" ? "TOTAL TOKENS USED" : "TOTAL TOKENS SAVED"}
                         </div>
                         <div style={{ color: "#f0f6fc", fontSize: 38, fontWeight: 800, letterSpacing: "-1px" }}>
-                          {nv(subTokenTab === "used" ? data.tokenData?.totalTokensUsed : data.tokenData?.totalTokensSaved).toLocaleString()}
+                          {nv(subTokenTab === "used" ? dTkUsed : dTkSaved).toLocaleString()}
                         </div>
                       </div>
                       <div style={{ flex: 1, minWidth: 260, background: subTokenTab === "used" ? "linear-gradient(135deg,#0d2a45,#051625)" : "linear-gradient(135deg,#0d452a,#052516)", border: `1px solid ${subTokenTab === "used" ? "#1f6feb33" : "#2ea04333"}`, borderRadius: 12, padding: "20px 24px", boxShadow: "0 4px 20px rgba(0,0,0,.3)" }}>
@@ -1770,7 +1832,7 @@
                           {subTokenTab === "used" ? "ESTIMATED ACTUAL COST" : "TOTAL COST SAVINGS"}
                         </div>
                         <div style={{ color: "#f0f6fc", fontSize: 38, fontWeight: 800, letterSpacing: "-1px" }}>
-                          ${nv(subTokenTab === "used" ? data.tokenData?.totalCostUsed : data.tokenData?.totalCostSaved).toFixed(4)}
+                          ${nv(subTokenTab === "used" ? dCUsed : dCSaved).toFixed(4)}
                         </div>
                       </div>
                     </div>
@@ -1793,12 +1855,12 @@
                             </tr>
                           </thead>
                           <tbody>
-                            {(subTokenTab === "used" ? (data.tokenData?.usedLogs || []) : (data.tokenData?.savedLogs || [])).length === 0 ? (
+                            {(subTokenTab === "used" ? fltUsed : fltSaved).length === 0 ? (
                                <tr><td colSpan="6" style={{ padding: 40, textAlign: "center", color: "#484f58", fontSize: 13 }}>No token data available yet.</td></tr>
-                            ) : (subTokenTab === "used" ? (data.tokenData?.usedLogs || []) : (data.tokenData?.savedLogs || [])).map((l, i) => (
+                            ) : (subTokenTab === "used" ? fltUsed : fltSaved).map((l, i) => (
                               <tr key={i} className="tr-hover" style={{ borderBottom: "1px solid #21262d55" }}>
                                 <td style={{ padding: 14, color: "#8b949e", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{fmtAge(l.timestamp)}</td>
-                                <td style={{ padding: 14, color: "#58a6ff", fontWeight: 700, whiteSpace: "nowrap" }}>{l.userId}</td>
+                                <td style={{ padding: 14, color: "#58a6ff", fontWeight: 700, whiteSpace: "nowrap" }}>{orgLabel(l.userId)}</td>
                                 <td style={{ padding: 14, color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.tool}</td>
                                 <td style={{ padding: 14, color: "#c9d1d9", fontWeight: 600 }}>{nv(l.tokens || l.saved).toLocaleString()}</td>
                                 <td style={{ padding: 14, color: subTokenTab === "used" ? "#fca5a5" : "#39d353", fontWeight: 800, fontSize: 13 }}>
@@ -1823,7 +1885,7 @@
                   </div>
                 )}
 
-                {tab === "policies" && <KeywordPoliciesPanel API={API} />}
+                {tab === "policies" && <KeywordPoliciesPanel API={API} orgLabel={orgLabel} />}
                 {tab === "keywords" && <UserKeywordsPage userId={user.userId} API={API} />}
 
                 {tab === "test" && (
@@ -1838,7 +1900,7 @@
               </div>
             </div>
           )}
-          {promptModal && <PromptModal log={promptModal} onClose={() => setPromptModal(null)} Badge={Badge} />}
+          {promptModal && <PromptModal log={promptModal} onClose={() => setPromptModal(null)} Badge={Badge} orgLabel={orgLabel} />}
         </div>
       );
     }

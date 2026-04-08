@@ -13,47 +13,53 @@ import java.util.Optional;
 @Service
 public class PromptValidationService {
 
-    private final SecretDetector      secretDetector;
-    private final PiiDetector         piiDetector;
-    private final PhiDetector         phiDetector;
-    private final SourceCodeDetector  sourceCodeDetector;
-    private final KeywordDetector     keywordDetector;
+    private final JailbreakDetector jailbreakDetector;
+    private final SecretDetector secretDetector;
+    private final PiiDetector piiDetector;
+    private final PhiDetector phiDetector;
+    private final SourceCodeDetector sourceCodeDetector;
+    private final KeywordDetector keywordDetector;
     private final UserKeywordDetector userKeywordDetector;
     private final CryptocurrencyDetector cryptocurrencyDetector;
     private final IpAddressDetector ipAddressDetector;
-    private final JwtDetector        jwtDetector;
+    private final JwtDetector jwtDetector;
     private final DatabaseConnectionDetector databaseConnectionDetector;
     private final CloudProviderDetector cloudProviderDetector;
-    private final UserRepository      userRepository;
+    private final UserRepository userRepository;
 
-    public PromptValidationService(SecretDetector secretDetector,
-                                   PiiDetector piiDetector,
-                                   PhiDetector phiDetector,
-                                   SourceCodeDetector sourceCodeDetector,
-                                   KeywordDetector keywordDetector,
-                                   UserKeywordDetector userKeywordDetector,
-                                   CryptocurrencyDetector cryptocurrencyDetector,
-                                   IpAddressDetector ipAddressDetector,
-                                   JwtDetector jwtDetector,
-                                   DatabaseConnectionDetector databaseConnectionDetector,
-                                   CloudProviderDetector cloudProviderDetector,
-                                   UserRepository userRepository) {
-        this.secretDetector      = secretDetector;
-        this.piiDetector         = piiDetector;
-        this.phiDetector         = phiDetector;
-        this.sourceCodeDetector  = sourceCodeDetector;
-        this.keywordDetector     = keywordDetector;
+    public PromptValidationService(JailbreakDetector jailbreakDetector,
+            SecretDetector secretDetector,
+            PiiDetector piiDetector,
+            PhiDetector phiDetector,
+            SourceCodeDetector sourceCodeDetector,
+            KeywordDetector keywordDetector,
+            UserKeywordDetector userKeywordDetector,
+            CryptocurrencyDetector cryptocurrencyDetector,
+            IpAddressDetector ipAddressDetector,
+            JwtDetector jwtDetector,
+            DatabaseConnectionDetector databaseConnectionDetector,
+            CloudProviderDetector cloudProviderDetector,
+            UserRepository userRepository) {
+        this.jailbreakDetector = jailbreakDetector;
+        this.secretDetector = secretDetector;
+        this.piiDetector = piiDetector;
+        this.phiDetector = phiDetector;
+        this.sourceCodeDetector = sourceCodeDetector;
+        this.keywordDetector = keywordDetector;
         this.userKeywordDetector = userKeywordDetector;
         this.cryptocurrencyDetector = cryptocurrencyDetector;
-        this.ipAddressDetector   = ipAddressDetector;
-        this.jwtDetector         = jwtDetector;
+        this.ipAddressDetector = ipAddressDetector;
+        this.jwtDetector = jwtDetector;
         this.databaseConnectionDetector = databaseConnectionDetector;
         this.cloudProviderDetector = cloudProviderDetector;
-        this.userRepository      = userRepository;
+        this.userRepository = userRepository;
     }
 
     public List<DetectionResult> validate(String prompt, String userId, String subUser) {
         List<DetectionResult> all = new ArrayList<>();
+
+        // ── PHASE 0: Global Jailbreak Detector (High Priority) ──────────────
+        all.addAll(jailbreakDetector.detect(prompt));
 
         // ── PHASE 1: Global detectors — same rules for ALL users/orgs ────────
         all.addAll(secretDetector.detect(prompt));
@@ -68,10 +74,7 @@ public class PromptValidationService {
         all.addAll(cloudProviderDetector.detect(prompt));
 
         // ── PHASE 2: Org-specific keyword check ───────────────────────────────
-        // Resolve userId → org_id so policy lookup uses the org_id stored in
-        // user_keyword_policies.user_id (e.g. "101" or "102").
-        // Falls back to the raw userId string if org_id is not set (admin, unknown).
-        String orgKey = userId; // default fallback
+        String orgKey = userId;
         if (userId != null && !userId.isBlank()) {
             try {
                 Optional<User> userOpt = userRepository.findByUserId(userId);
@@ -79,7 +82,6 @@ public class PromptValidationService {
                     orgKey = String.valueOf(userOpt.get().getOrgId());
                 }
             } catch (Exception e) {
-                // keep fallback
             }
         }
 

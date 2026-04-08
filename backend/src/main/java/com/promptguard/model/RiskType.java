@@ -7,5 +7,6 @@ public enum RiskType {
     SOURCE_CODE,  // Java, Python, SQL code
     KEYWORD,      // Blocked keywords (global)
     ORG_KEYWORD,  // Org-specific keyword from user_keyword_policies table
+    PROMPT_INJECTION, // Jailbreak or persona switching attempts
     NONE          // No risk
 }

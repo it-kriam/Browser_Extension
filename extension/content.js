@@ -56,9 +56,9 @@ async function getSettings() {
         });
       }
       resolve({
-        userId:  (data.userId && data.userId.trim()) ? data.userId.trim() : "anonymous-user",
+        userId: (data.userId && data.userId.trim()) ? data.userId.trim() : "anonymous-user",
         subUser: (data.subUser && data.subUser.trim()) ? data.subUser.trim() : "anonymous-sub",
-        apiUrl:  (data.apiUrl  && data.apiUrl.trim())  ? data.apiUrl.trim()  : "http://localhost:8080",
+        apiUrl: (data.apiUrl && data.apiUrl.trim()) ? data.apiUrl.trim() : "http://localhost:8080",
         enabled: data.enabled !== false,
       });
     });
@@ -70,6 +70,7 @@ function showToast(message, type) {
   if (old) old.remove();
 
   const styles = {
+    critical: { bg: "#991b1b", border: "#f87171", icon: "🚨" },
     block: { bg: "#dc2626", border: "#ef4444", icon: "🚫" },
     redact: { bg: "#7c3aed", border: "#a78bfa", icon: "✏️" },
     alert: { bg: "#d97706", border: "#fbbf24", icon: "⚠️" },
@@ -116,7 +117,7 @@ async function checkPrompt(promptText, submitFn) {
   }
   chrome.storage.sync.get(["enabled"], async (data) => {
     if (data.enabled === false) { submitFn(promptText); return; }
-    
+
     // Always call background.js to fetch config/API
     chrome.runtime.sendMessage(
       { type: "PROCESS_PROMPT", prompt: promptText, tool: detectTool(), browserName: await detectBrowser() },
@@ -131,8 +132,8 @@ async function checkPrompt(promptText, submitFn) {
         } else if (result.action === "REDACT") {
           showToast("Sensitive data removed. " + result.reason, "redact");
           submitFn(result.redactedPrompt || promptText);
-        } else if (result.action === "ALERT") {
-          showToast("Warning: " + result.reason, "alert");
+        } else if (result.action === "ALERT" || result.action === "CRITICAL") {
+          showToast("Prompt CRITICAL! " + result.reason, "alert");
           submitFn(promptText);
         } else {
           submitFn(promptText);

@@ -30,8 +30,8 @@ public class PolicyEngine {
 
         // 1. Explicit Score-based ranges (Standardized across app)
         if (score >= 80) {
-            // BLOCK branch
-            String reason = "Critical risk detected. ";
+            // STANDARD BLOCK branch
+            String reason = "Severe security risk automatically blocked. ";
             if (type == RiskType.SECRET) reason = "Credential/Secret detected. ";
             if (type == RiskType.KEYWORD) reason = "Strictly blocked keyword detected. ";
             if (type == RiskType.PHI) reason = "Restricted PHI (Medical Identifiers) detected. ";

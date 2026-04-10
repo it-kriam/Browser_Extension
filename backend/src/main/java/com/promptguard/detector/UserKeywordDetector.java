@@ -4,36 +4,20 @@ import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
 import com.promptguard.model.UserKeywordPolicy;
 import com.promptguard.repository.UserPolicyRepository;
+import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * UserKeywordDetector — Org-specific keyword check.
- *
- * HOW IT WORKS:
- *   1. Fetch only the rows where user_id = parent-org AND sub_user = current employee
- *   2. Check if prompt contains any keyword from keyword_list
- *   3. Apply the action defined by the DB column checked for that policy row
- *
- * ISOLATION GUARANTEE:
- *   rohan-user's keyword_list is NEVER checked for kushal-user's sub-users.
- *   The DB query uses WHERE user_id = ? AND sub_user = ? — fully isolated per org.
- *
- * ALL 4 COLUMN → ACTION mappings:
- *
- *   block_col    = true  →  score=100  →  Action=BLOCK,   RiskLevel=CRITICAL
- *   critial_col  = true  →  score=55   →  Action=ALERT,   RiskLevel=MEDIUM (Critical label)
- *   redacted_col = true  →  score=75   →  Action=REDACT,  RiskLevel=HIGH
- *   allow_col    = true  →  no result  →  prompt passes through (ALLOW)
- *
- * BLOCK:
- *   block_col   → absolute block (score=100)
- *   Both result in Action.BLOCK. Prompt cannot be sent.
+ * UserKeywordDetector — 3-Layer Intelligent Org-specific Shield.
+ * L1: Isolated keyword matching from Database.
+ * L2: Semantic intent for organizational policy circumvention.
+ * L3: LLM reasoning for proprietary data leaks within org context.
  */
 @Component
-public class UserKeywordDetector {
+public class UserKeywordDetector implements Detector {
 
     private final UserPolicyRepository repository;
 
@@ -41,63 +25,87 @@ public class UserKeywordDetector {
         this.repository = repository;
     }
 
-    public List<DetectionResult> detect(String userId, String subUser, String prompt) {
+    @Override
+    public String getName() {
+        return "UserKeywordDetector";
+    }
+
+    @Override
+    public List<DetectionResult> detect(DetectionContext context) {
+        return detect(context.getUserId(), context.getSubUser(), context.getPrompt(), context.getDecision());
+    }
+
+    public List<DetectionResult> detect(String userId, String subUser, String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
         if (prompt == null || prompt.isBlank()) return results;
         if (userId == null || subUser == null)  return results;
 
+        // ── LAYER 1: REGEX / EXACT (DB Managed) ─────────────────────
+        if (runRegexLayer(userId, subUser, prompt, results)) return results;
+
+        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
+        runSemanticLayer(prompt, results);
+        if (!results.isEmpty()) return results;
+
+        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
+        runLlamaLayer(userId, prompt, results, decision);
+
+        return results;
+    }
+
+    private boolean runRegexLayer(String userId, String subUser, String prompt, List<DetectionResult> results) {
         List<UserKeywordPolicy> policies = repository.findPolicies(userId, subUser);
         String lowerPrompt = prompt.toLowerCase();
+        boolean matchFound = false;
 
         for (UserKeywordPolicy policy : policies) {
-            // Check sub_user isolation: row must either match current subUser or be '*' (global for org)
-            boolean isGlobal = "*".equals(policy.getSubUser());
-            boolean isMatch  = subUser.equalsIgnoreCase(policy.getSubUser());
-
-            if (!isGlobal && !isMatch) continue;
+            String subUserField = policy.getSubUser();
+            if (!"*".equals(subUserField) && !subUser.equalsIgnoreCase(subUserField)) continue;
 
             String[] keywords = policy.getKeywordList().split(",");
-
             for (String kw : keywords) {
                 String cleanKw = kw.trim();
                 if (cleanKw.isEmpty()) continue;
 
                 if (cleanKw.equals("*") || lowerPrompt.contains(cleanKw.toLowerCase())) {
+                    if (policy.isAllowCol()) return false; // Early exit on whitelist
 
-                    // allow_col = true → explicitly whitelisted → no result, prompt passes
-                    if (policy.isAllowCol()) {
-                        break;
-                    }
-
-                    int    score     = 0;
+                    int score = 0;
                     String actionStr = "NONE";
 
                     if (policy.isBlockCol()) {
-                        score     = 100;   // → PolicyEngine BLOCK
+                        score = 100;
                         actionStr = "BLOCK";
                     } else if (policy.isCriticalCol()) {
-                        score     = 55;    // → PolicyEngine ALERT (Critical label)
+                        score = 55;
                         actionStr = "CRITICAL";
                     } else if (policy.isRedactedCol()) {
-                        score     = 75;    // → PolicyEngine REDACT
+                        score = 75;
                         actionStr = "REDACT";
                     }
 
                     if (score > 0) {
-                        results.add(new DetectionResult(
-                            RiskType.ORG_KEYWORD,
-                            score,
-                            "Org-specific keyword hit (" + actionStr + ") "
-                                + "for org [" + userId + "]: \"" + cleanKw + "\"",
-                            cleanKw
-                        ));
+                        results.add(new DetectionResult(RiskType.ORG_KEYWORD, score,
+                            "L1_ORG_HIT (" + actionStr + ") for org [" + userId + "]: \"" + cleanKw + "\"", cleanKw));
+                        matchFound = true;
                     }
-
-                    break;
+                    break; 
                 }
             }
         }
+        return matchFound;
+    }
 
-        return results;
+    private void runSemanticLayer(String prompt, List<DetectionResult> results) {
+        String lower = prompt.toLowerCase();
+        if (lower.contains("internal") && lower.contains("document") && lower.contains("share")) {
+            results.add(new DetectionResult(RiskType.ORG_KEYWORD, 65, "L2_ORG_INTENT: Internal document sharing attempt", prompt));
+        }
+    }
+
+    private void runLlamaLayer(String orgId, String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
+        if (decision.score >= 80 && (decision.reason.toUpperCase().contains("CONFIDENTIAL") || decision.reason.toUpperCase().contains("INTERNAL"))) {
+            results.add(new DetectionResult(RiskType.ORG_KEYWORD, decision.score, "L3_ORG_LLM: " + decision.reason + " (Org: " + orgId + ")", prompt));
+        }
     }
 }

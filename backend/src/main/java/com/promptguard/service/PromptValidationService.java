@@ -7,9 +7,17 @@ import com.promptguard.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+/**
+ * PromptValidationService — The Orchestrator.
+ * Now optimized with Parallel Execution to minimize latency.
+ */
 @Service
 public class PromptValidationService {
 
@@ -25,7 +33,10 @@ public class PromptValidationService {
     private final JwtDetector jwtDetector;
     private final DatabaseConnectionDetector databaseConnectionDetector;
     private final CloudProviderDetector cloudProviderDetector;
+    private final OllamaService ollamaService;
     private final UserRepository userRepository;
+    private final ToolInterceptionService interceptionService;
+    private final List<Detector> parallelTools;
 
     public PromptValidationService(JailbreakDetector jailbreakDetector,
             SecretDetector secretDetector,
@@ -39,7 +50,9 @@ public class PromptValidationService {
             JwtDetector jwtDetector,
             DatabaseConnectionDetector databaseConnectionDetector,
             CloudProviderDetector cloudProviderDetector,
-            UserRepository userRepository) {
+            OllamaService ollamaService,
+            UserRepository userRepository,
+            ToolInterceptionService interceptionService) {
         this.jailbreakDetector = jailbreakDetector;
         this.secretDetector = secretDetector;
         this.piiDetector = piiDetector;
@@ -52,41 +65,58 @@ public class PromptValidationService {
         this.jwtDetector = jwtDetector;
         this.databaseConnectionDetector = databaseConnectionDetector;
         this.cloudProviderDetector = cloudProviderDetector;
+        this.ollamaService = ollamaService;
         this.userRepository = userRepository;
+        this.interceptionService = interceptionService;
+
+        // Initialize the parallel tool list
+        this.parallelTools = List.of(
+            secretDetector, piiDetector, phiDetector, sourceCodeDetector,
+            keywordDetector, cryptocurrencyDetector, ipAddressDetector,
+            jwtDetector, databaseConnectionDetector, cloudProviderDetector
+        );
     }
 
     public List<DetectionResult> validate(String prompt, String userId, String subUser) {
-        List<DetectionResult> all = new ArrayList<>();
+        if (prompt == null || prompt.isBlank()) return Collections.emptyList();
 
-        // ── PHASE 0: Global Jailbreak Detector (High Priority) ──────────────
-        all.addAll(jailbreakDetector.detect(prompt));
+        // ── PHASE 0: Global LLM Decision (Single-Pass) ────────────────────
+        OllamaService.LlmDecision globalDecision = ollamaService.predictRisk(prompt);
+        DetectionContext context = new DetectionContext(prompt, userId, subUser, globalDecision);
 
-        // ── PHASE 1: Global detectors — same rules for ALL users/orgs ────────
-        all.addAll(secretDetector.detect(prompt));
-        all.addAll(piiDetector.detect(prompt));
-        all.addAll(phiDetector.detect(prompt));
-        all.addAll(sourceCodeDetector.detect(prompt));
-        all.addAll(keywordDetector.detect(prompt));
-        all.addAll(cryptocurrencyDetector.detect(prompt));
-        all.addAll(ipAddressDetector.detect(prompt));
-        all.addAll(jwtDetector.detect(prompt));
-        all.addAll(databaseConnectionDetector.detect(prompt));
-        all.addAll(cloudProviderDetector.detect(prompt));
+        // ── PHASE 1: Jailbreak Firewall (Sequential Interception) ─────────
+        List<DetectionResult> results = new ArrayList<>(
+            interceptionService.interceptAndExecute(jailbreakDetector, context));
 
-        // ── PHASE 2: Org-specific keyword check ───────────────────────────────
-        String orgKey = userId;
-        if (userId != null && !userId.isBlank()) {
-            try {
-                Optional<User> userOpt = userRepository.findByUserId(userId);
-                if (userOpt.isPresent() && userOpt.get().getOrgId() != null) {
-                    orgKey = String.valueOf(userOpt.get().getOrgId());
-                }
-            } catch (Exception e) {
+        // ── PHASE 2: Global Detectors (Parallel Interception) ─────────────
+        List<CompletableFuture<List<DetectionResult>>> futures = parallelTools.stream()
+            .map(tool -> CompletableFuture.supplyAsync(() -> 
+                interceptionService.interceptAndExecute(tool, context)))
+            .collect(Collectors.toList());
+
+        // Wait for all Phase 2 detectors
+        List<DetectionResult> parallelResults = futures.stream()
+                .map(CompletableFuture::join)
+                .flatMap(List::stream)
+                .collect(Collectors.toList());
+        results.addAll(parallelResults);
+
+        // ── PHASE 3: Org-specific policies ───────────────────────────────────
+        String orgKey = resolveOrgName(userId);
+        DetectionContext orgContext = new DetectionContext(prompt, orgKey, subUser, globalDecision);
+        results.addAll(interceptionService.interceptAndExecute(userKeywordDetector, orgContext));
+
+        return results;
+    }
+
+    private String resolveOrgName(String userId) {
+        if (userId == null || userId.isBlank()) return userId;
+        try {
+            Optional<User> userOpt = userRepository.findByUserId(userId);
+            if (userOpt.isPresent() && userOpt.get().getOrgId() != null) {
+                return String.valueOf(userOpt.get().getOrgId());
             }
-        }
-
-        all.addAll(userKeywordDetector.detect(orgKey, subUser, prompt));
-
-        return all;
+        } catch (Exception ignored) {}
+        return userId;
     }
 }

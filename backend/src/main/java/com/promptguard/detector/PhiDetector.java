@@ -2,6 +2,7 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
+import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -11,10 +12,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * PhiDetector — Fast Medical Shield.
+ * PhiDetector — 3-Layer Intelligent Medical Shield.
+ * L1: Fast Regex Matching
+ * L2: Semantic Intent Analysis
+ * L3: Local LLM (Llama3) Reasoning
  */
 @Component
-public class PhiDetector {
+public class PhiDetector implements Detector {
 
     private static final Pattern MRN = Pattern.compile("\\b(MRN|mrn|medical record|patient id|patient#|record number)[:\\s#-]*[A-Z0-9]{4,15}\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern ICD10 = Pattern.compile("\\b[A-Z][0-9]{2}(\\.?[A-Z0-9]{1,6})?\\b");
@@ -24,11 +28,33 @@ public class PhiDetector {
     private static final List<String> HEALTH_CONTEXT = Arrays.asList("diagnosed", "prescribed", "treatment", "symptoms", "surgery", "patient", "history");
     private static final List<String> PERSONAL_CONTEXT = Arrays.asList("my", "me", "i am", "he has", "she was");
 
-    public List<DetectionResult> detect(String prompt) {
+    public PhiDetector() {
+    }
+
+    @Override
+    public String getName() {
+        return "PhiDetector";
+    }
+
+    @Override
+    public List<DetectionResult> detect(DetectionContext context) {
+        return detect(context.getPrompt(), context.getDecision());
+    }
+
+    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
         if (prompt == null || prompt.isBlank()) return results;
+        
+        // ── LAYER 1: REGEX ───────────────────────────────────────────
         if (runRegexLayer(prompt, results)) return results;
+        
+        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
         runSemanticLayer(prompt, results);
+        if (!results.isEmpty()) return results;
+
+        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
+        runLlamaLayer(prompt, results, decision);
+        
         return results;
     }
 
@@ -46,7 +72,13 @@ public class PhiDetector {
         boolean hasPersonal = PERSONAL_CONTEXT.stream().anyMatch(w -> lower.matches(".*\\b" + w + "\\b.*"));
         boolean hasHealth = HEALTH_CONTEXT.stream().anyMatch(w -> lower.matches(".*\\b" + w + "\\b.*"));
         if (hasPersonal && hasHealth) {
-            results.add(new DetectionResult(RiskType.PHI, 70, "L2_PHI_INTENT", prompt));
+            results.add(new DetectionResult(RiskType.PHI, 70, "L2_PHI_INTENT", "Potential PHI sharing intent detected."));
+        }
+    }
+
+    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
+        if (decision.score >= 80 && (decision.reason.toUpperCase().contains("PHI") || "BLOCK".equals(decision.action))) {
+            results.add(new DetectionResult(RiskType.PHI, decision.score, "L3_PHI_LLM: " + decision.reason, prompt));
         }
     }
 

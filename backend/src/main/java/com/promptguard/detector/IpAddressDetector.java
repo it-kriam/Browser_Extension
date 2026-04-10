@@ -2,6 +2,7 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
+import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -10,8 +11,14 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * IpAddressDetector — 3-Layer Intelligent Network Shield.
+ * L1: Regex detection for Public IPv4 and IPv6 addresses.
+ * L2: Semantic intent for infrastructure detail sharing.
+ * L3: LLM reasoning for hidden network topologies or leaks.
+ */
 @Component
-public class IpAddressDetector {
+public class IpAddressDetector implements Detector {
 
     // IPv4 Address Pattern (e.g. 192.168.1.1)
     private static final Pattern IPV4_PATTERN = Pattern.compile(
@@ -25,65 +32,74 @@ public class IpAddressDetector {
 
     // Common IP-related keywords
     private static final Set<String> IP_KEYWORDS = Set.of(
-        "ip address", "ipv4", "ipv6", "localhost", "127.0.0.1", 
-        "network ip", "client ip", "server ip", "gateway ip", "subnet mask"
+        "ip address", "ipv4", "ipv6", "network ip", "client ip", "server ip", "gateway ip", "subnet mask"
     );
 
-    public List<DetectionResult> detect(String prompt) {
+    public IpAddressDetector() {
+    }
+
+    @Override
+    public String getName() {
+        return "IpAddressDetector";
+    }
+
+    @Override
+    public List<DetectionResult> detect(DetectionContext context) {
+        return detect(context.getPrompt(), context.getDecision());
+    }
+
+    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
         if (prompt == null || prompt.isBlank()) return results;
 
-        // Detect IPv4 Addresses
-        Matcher v4Matcher = IPV4_PATTERN.matcher(prompt);
-        while (v4Matcher.find()) {
-            String ip = v4Matcher.group();
+        // ── LAYER 1: REGEX ───────────────────────────────────────────
+        if (runRegexLayer(prompt, results)) return results;
 
-            // Skip RFC 1918 private ranges (often safe in configs)
-            if (!isPrivateIP(ip)) {
-                results.add(new DetectionResult(
-                        RiskType.PII,
-                        70,  // Higher score for public IPs
-                        "Public IPv4 Address detected: " + ip,
-                        ip
-                ));
-            }
-        }
+        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
+        runSemanticLayer(prompt, results);
+        if (!results.isEmpty()) return results;
 
-        // Detect IPv6 Addresses
-        Matcher v6Matcher = IPV6_PATTERN.matcher(prompt);
-        while (v6Matcher.find()) {
-            results.add(new DetectionResult(
-                    RiskType.PII,
-                    65, 
-                    "IPv6 Address detected. Potentially leaking network infrastructure or user location.",
-                    v6Matcher.group()
-            ));
-        }
-
-        // Keyword checks
-        checkKeywords(prompt, IP_KEYWORDS, "IP Address Keyword", 55, results);
+        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
+        runLlamaLayer(prompt, results, decision);
 
         return results;
     }
 
-    private void checkKeywords(String prompt, Set<String> keywords, String label,
-                                int score, List<DetectionResult> results) {
+    private boolean runRegexLayer(String prompt, List<DetectionResult> results) {
+        boolean match = false;
+        Matcher v4Matcher = IPV4_PATTERN.matcher(prompt);
+        while (v4Matcher.find()) {
+            String ip = v4Matcher.group();
+            if (!isPrivateIP(ip)) {
+                results.add(new DetectionResult(RiskType.PII, 70, "L1_IP: Public IPv4 Address", ip));
+                match = true;
+            }
+        }
+        Matcher v6Matcher = IPV6_PATTERN.matcher(prompt);
+        while (v6Matcher.find()) {
+            results.add(new DetectionResult(RiskType.PII, 65, "L1_IP: IPv6 Address", v6Matcher.group()));
+            match = true;
+        }
+        return match;
+    }
+
+    private void runSemanticLayer(String prompt, List<DetectionResult> results) {
         String lower = prompt.toLowerCase();
-        for (String kw : keywords) {
-            if (lower.contains(kw.toLowerCase())) {
-                results.add(new DetectionResult(
-                    RiskType.PII,
-                    score,
-                    "PII detected: " + label + " — \"" + kw + "\"",
-                    kw
-                ));
-                return; // one hit per category is enough
+        for (String kw : IP_KEYWORDS) {
+            if (lower.contains(kw)) {
+                results.add(new DetectionResult(RiskType.PII, 55, "L2_IP_KEYWORD: " + kw, kw));
+                return;
             }
         }
     }
 
+    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
+        if (decision.score >= 70 && (decision.reason.toUpperCase().contains("IP ADDRESS") || decision.reason.toUpperCase().contains("NETWORK"))) {
+            results.add(new DetectionResult(RiskType.PII, decision.score, "L3_IP_LLM: " + decision.reason, prompt));
+        }
+    }
+
     private boolean isPrivateIP(String ip) {
-        // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 0.0.0.0/8
         return ip.startsWith("10.") || ip.startsWith("172.16.") || 
                ip.startsWith("192.168.") || ip.startsWith("127.") || 
                ip.startsWith("0.");

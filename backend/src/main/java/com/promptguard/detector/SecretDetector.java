@@ -2,6 +2,7 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
+import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -11,10 +12,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * SecretDetector — Fast Static Shield.
+ * SecretDetector — 3-Layer Intelligent Shield.
+ * L1: Fast Regex Matching
+ * L2: Semantic Intent Analysis
+ * L3: Local LLM (Llama3) Reasoning
  */
 @Component
-public class SecretDetector {
+public class SecretDetector implements Detector {
 
     private static final List<Pattern> SECRET_PATTERNS = List.of(
             Pattern.compile("(?:password|passwd|pwd|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key)(?:\\s+is\\s+|\\s*[=:]\\s*)[\\w!@#$%^&*]+", Pattern.CASE_INSENSITIVE|Pattern.MULTILINE),
@@ -30,10 +34,33 @@ public class SecretDetector {
     private static final List<String> SENSITIVE_WORDS = Arrays.asList("password", "login", "api key", "auth", "credential", "secret", "token", "pk", "passcode");
     private static final List<String> SHARING_WORDS = Arrays.asList("is", "are", "here is", "giving", "sharing", "save", "store");
 
-    public List<DetectionResult> detect(String prompt) {
+    public SecretDetector() {
+    }
+
+    @Override
+    public String getName() {
+        return "SecretDetector";
+    }
+
+    @Override
+    public List<DetectionResult> detect(DetectionContext context) {
+        return detect(context.getPrompt(), context.getDecision());
+    }
+
+    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
+        if (prompt == null || prompt.isBlank()) return results;
+        
+        // ── LAYER 1: REGEX ───────────────────────────────────────────
         if (runRegexLayer(prompt, results)) return results;
+        
+        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
         runSemanticLayer(prompt, results);
+        if (!results.isEmpty()) return results;
+
+        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
+        runLlamaLayer(prompt, results, decision);
+        
         return results;
     }
 
@@ -55,7 +82,13 @@ public class SecretDetector {
         boolean hasSharing = SHARING_WORDS.stream().anyMatch(w -> lowerPrompt.matches(".*\\b" + w + "\\b.*"));
 
         if (hasOwnership && hasSensitive && hasSharing) {
-            results.add(new DetectionResult(RiskType.SECRET, 95, "L2_SECRET_INTENT", prompt));
+            results.add(new DetectionResult(RiskType.SECRET, 95, "L2_SECRET_INTENT", "Potential secret sharing intent detected."));
+        }
+    }
+
+    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
+        if (decision.score >= 85 && (decision.reason.toUpperCase().contains("SECRET") || "BLOCK".equals(decision.action))) {
+            results.add(new DetectionResult(RiskType.SECRET, decision.score, "L3_SECRET_LLM: " + decision.reason, prompt));
         }
     }
 }

@@ -2,6 +2,7 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
+import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -11,10 +12,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * PiiDetector — Fast Static PII Shield.
+ * PiiDetector — 3-Layer Intelligent PII Shield.
+ * L1: Fast Regex Matching
+ * L2: Semantic Intent Analysis
+ * L3: Local LLM (Llama3) Reasoning
  */
 @Component
-public class PiiDetector {
+public class PiiDetector implements Detector {
 
     private static final Pattern EMAIL = Pattern.compile("[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}");
     private static final Pattern PHONE = Pattern.compile("(\\+91[\\-\\s]?)?[6-9]\\d{9}");
@@ -27,10 +31,33 @@ public class PiiDetector {
     private static final List<String> SENSITIVE_WORDS = Arrays.asList("password", "login", "api key", "card", "bank", "account details", "otp", "aadhaar", "pan");
     private static final List<String> SHARING_WORDS = Arrays.asList("is", "are", "here is", "giving", "sharing");
 
-    public List<DetectionResult> detect(String prompt) {
+    public PiiDetector() {
+    }
+
+    @Override
+    public String getName() {
+        return "PiiDetector";
+    }
+
+    @Override
+    public List<DetectionResult> detect(DetectionContext context) {
+        return detect(context.getPrompt(), context.getDecision());
+    }
+
+    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
+        if (prompt == null || prompt.isBlank()) return results;
+        
+        // ── LAYER 1: REGEX ───────────────────────────────────────────
         if (runRegexLayer(prompt, results)) return results;
+        
+        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
         runSemanticLayer(prompt, results);
+        if (!results.isEmpty()) return results;
+
+        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
+        runLlamaLayer(prompt, results, decision);
+        
         return results;
     }
 
@@ -51,7 +78,13 @@ public class PiiDetector {
         boolean hasSensitive = SENSITIVE_WORDS.stream().anyMatch(w -> lower.matches(".*\\b" + w + "\\b.*"));
         boolean hasSharing = SHARING_WORDS.stream().anyMatch(w -> lower.matches(".*\\b" + w + "\\b.*"));
         if ((hasOwnership ? 1 : 0) + (hasSensitive ? 1 : 0) + (hasSharing ? 1 : 0) >= 2) {
-            results.add(new DetectionResult(RiskType.PII, 85, "L2_PII_INTENT", prompt));
+            results.add(new DetectionResult(RiskType.PII, 85, "L2_PII_INTENT", "Potential PII sharing intent detected."));
+        }
+    }
+
+    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
+        if (decision.score >= 80 && (decision.reason.toUpperCase().contains("PII") || "BLOCK".equals(decision.action))) {
+            results.add(new DetectionResult(RiskType.PII, decision.score, "L3_PII_LLM: " + decision.reason, prompt));
         }
     }
 

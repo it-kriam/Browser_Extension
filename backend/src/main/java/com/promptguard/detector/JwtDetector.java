@@ -2,6 +2,7 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
+import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -12,26 +13,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * JwtDetector — detects JSON Web Tokens (JWTs) embedded in prompts.
- *
- * Use-cases caught:
- *  - Access tokens / ID tokens pasted from app configs or curl commands
- *  - Authorization Bearer tokens in log snippets
- *  - Refresh tokens accidentally included in support tickets
- *  - JWTs from Postman/Insomnia environment dumps
- *
- * Format: header.payload.signature  (Base64URL-encoded, each part separated by '.')
- *
- * Risk model:
- *  - Score 90 → the token itself is a live credential  → PolicyEngine → BLOCK
- *  - We also attempt to decode the payload and surface the 'sub'/'email'/'iss'
- *    claims so the audit log is enriched without storing the raw token.
+ * JwtDetector — 3-Layer Intelligent JWT Shield.
+ * L1: Regex detection for Header.Payload.Signature format.
+ * L2: Semantic intent for authentication token sharing.
+ * L3: LLM reasoning for obfuscated tokens or login flows.
  */
 @Component
-public class JwtDetector {
+public class JwtDetector implements Detector {
 
     // JWT structure: 3 Base64URL segments separated by dots.
-    // Header and payload must be at least 10 chars; signature at least 20.
     private static final Pattern JWT_PATTERN = Pattern.compile(
             "\\b(eyJ[A-Za-z0-9_-]{10,})\\.([A-Za-z0-9_-]{10,})\\.([A-Za-z0-9_-]{20,})\\b"
     );
@@ -39,99 +29,91 @@ public class JwtDetector {
     // Common JWT and authentication token keywords
     private static final Set<String> JWT_KEYWORDS = Set.of(
         "jwt", "json web token", "bearer token", "access token", 
-        "refresh token", "id token", "auth token", "authorization: bearer",
+        "refresh token", "id token", "auth token", "authorization bearer",
         "x-auth-token"
     );
 
-    public List<DetectionResult> detect(String prompt) {
+    public JwtDetector() {
+    }
+
+    @Override
+    public String getName() {
+        return "JwtDetector";
+    }
+
+    @Override
+    public List<DetectionResult> detect(DetectionContext context) {
+        return detect(context.getPrompt(), context.getDecision());
+    }
+
+    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
         if (prompt == null || prompt.isBlank()) return results;
 
-        Matcher m = JWT_PATTERN.matcher(prompt);
-        while (m.find()) {
-            String fullToken = m.group();
-            String description = buildDescription(m.group(2)); // group(2) = payload part
-            results.add(new DetectionResult(
-                    RiskType.SECRET,
-                    90,   // 85-90 range — use 90 so PolicyEngine always routes to BLOCK
-                    description,
-                    fullToken
-            ));
-        }
+        // ── LAYER 1: REGEX ───────────────────────────────────────────
+        if (runRegexLayer(prompt, results)) return results;
 
-        // Keyword checks
-        checkKeywords(prompt, JWT_KEYWORDS, "JWT Keyword", 80, results);
+        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
+        runSemanticLayer(prompt, results);
+        if (!results.isEmpty()) return results;
+
+        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
+        runLlamaLayer(prompt, results, decision);
 
         return results;
     }
 
-    private void checkKeywords(String prompt, Set<String> keywords, String label,
-                                int score, List<DetectionResult> results) {
+    private boolean runRegexLayer(String prompt, List<DetectionResult> results) {
+        Matcher m = JWT_PATTERN.matcher(prompt);
+        if (m.find()) {
+            String fullToken = m.group();
+            String description = buildDescription(m.group(2)); // group(2) = payload
+            results.add(new DetectionResult(RiskType.SECRET, 90, "L1_JWT: " + description, fullToken));
+            return true;
+        }
+        return false;
+    }
+
+    private void runSemanticLayer(String prompt, List<DetectionResult> results) {
         String lower = prompt.toLowerCase();
-        for (String kw : keywords) {
-            if (lower.contains(kw.toLowerCase())) {
-                results.add(new DetectionResult(
-                    RiskType.SECRET,
-                    score,
-                    "Secret detected: " + label + " — \"" + kw + "\"",
-                    kw
-                ));
-                return; // one hit per category is enough
+        for (String kw : JWT_KEYWORDS) {
+            if (lower.contains(kw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 80, "L2_JWT_KEYWORD: " + kw, kw));
+                return;
             }
         }
     }
 
-    /**
-     * Attempts a best-effort decode of the JWT payload to enrich the audit
-     * description. Does NOT throw if the payload is malformed.
-     */
+    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
+        if (decision.score >= 80 && (decision.reason.toUpperCase().contains("JWT") || decision.reason.toUpperCase().contains("AUTH TOKEN") || decision.reason.toUpperCase().contains("SESSION"))) {
+            results.add(new DetectionResult(RiskType.SECRET, decision.score, "L3_JWT_LLM: " + decision.reason, prompt));
+        }
+    }
+
     private String buildDescription(String payloadB64) {
         try {
-            // Pad Base64URL to standard Base64 length
             int pad = (4 - payloadB64.length() % 4) % 4;
             String padded = payloadB64 + "=".repeat(pad);
             String payloadJson = new String(Base64.getUrlDecoder().decode(padded));
 
-            // Simple string extraction — no full JSON parser needed here
             String subject = extractClaim(payloadJson, "sub");
             String email   = extractClaim(payloadJson, "email");
             String issuer  = extractClaim(payloadJson, "iss");
-            boolean isExpired = isTokenExpired(payloadJson);
 
-            StringBuilder sb = new StringBuilder("JWT detected — live auth token");
-            if (isExpired) {
-                sb.append(" (Expired)");
-            }
-            sb.append(".");
-            if (!issuer.isEmpty())  sb.append(" Issuer: ").append(issuer).append(".");
-            if (!subject.isEmpty()) sb.append(" Subject: ").append(subject).append(".");
-            if (!email.isEmpty())   sb.append(" Email: ").append(email).append(".");
-            sb.append(" Sending tokens to AI tools exposes user sessions and API access.");
+            StringBuilder sb = new StringBuilder("JWT detected");
+            if (!issuer.isEmpty())  sb.append(" Issuer: ").append(issuer);
+            if (!subject.isEmpty()) sb.append(" Subject: ").append(subject);
+            if (!email.isEmpty())   sb.append(" Email: ").append(email);
             return sb.toString();
 
         } catch (Exception e) {
-            return "JWT detected — live auth token. Sending tokens to AI exposes user sessions.";
+            return "JWT detected — live auth token.";
         }
     }
 
     private String extractClaim(String json, String key) {
-        // Looks for  "key":"value",  "key": "value", or "key": 123
         Pattern p = Pattern.compile("\"" + key + "\"\\s*:\\s*\"?([^\",}]+)\"?");
         Matcher m = p.matcher(json);
         return m.find() ? m.group(1).trim() : "";
-    }
-
-    private boolean isTokenExpired(String payloadJson) {
-        String exp = extractClaim(payloadJson, "exp");
-        if (!exp.isEmpty()) {
-            try {
-                long expTime = Long.parseLong(exp) * 1000; // JWT exp is in seconds
-                return expTime < System.currentTimeMillis();
-            } catch (NumberFormatException e) {
-                // Ignore parsing errors and assume not expired
-                return false;
-            }
-        }
-        return false;
     }
 }

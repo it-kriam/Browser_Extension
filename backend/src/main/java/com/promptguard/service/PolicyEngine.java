@@ -28,7 +28,19 @@ public class PolicyEngine {
         int      score = riskScore.getTotalScore();
         RiskType type  = riskScore.getRiskType();
 
-        // 1. Explicit Score-based ranges (Standardized across app)
+        // 🟢 PRIORITY 1: PII should ALWAYS be REDACT (unless it's actually safe)
+        if (type == RiskType.PII && score >= 40) {
+            String reason = "Personally Identifiable Information (PII) detected. Scrapped for privacy.";
+            return new PolicyDecision(Action.REDACT, reason + " (Score: " + score + ")");
+        }
+
+        // 🟢 PRIORITY 2: SOURCE_CODE should ALWAYS be ALERT (unless it's actually safe)
+        if (type == RiskType.SOURCE_CODE && score >= 40) {
+            String reason = "Source code or SQL query detected. Review encouraged.";
+            return new PolicyDecision(Action.ALERT, reason + " (Score: " + score + ")");
+        }
+
+        // 🟢 STANDARD LOGIC FOR OTHERS
         if (score >= 80) {
             // STANDARD BLOCK branch
             String reason = "Severe security risk automatically blocked. ";
@@ -43,10 +55,8 @@ public class PolicyEngine {
         if (score >= 60) {
             // REDACT branch
             String reason = "High-risk content detected. ";
-            if (type == RiskType.PII) reason = "Personally Identifiable Information detected. ";
             if (type == RiskType.PHI) reason = "Protected Health Information detected. ";
             if (type == RiskType.ORG_KEYWORD) reason = "Organisation policy: sensitive keyword redacted. ";
-            if (type == RiskType.SOURCE_CODE) reason = "Sensitive source code detected. ";
             
             return new PolicyDecision(Action.REDACT, reason + "Content was safe-guarded before sending (Score: " + score + ").");
         }
@@ -54,7 +64,6 @@ public class PolicyEngine {
         if (score >= 40) {
             // ALERT (Critical) branch
             String reason = "Medium/Critical risk alert. ";
-            if (type == RiskType.SOURCE_CODE) reason = "Snippet of code or SQL query detected. ";
             if (type == RiskType.ORG_KEYWORD) reason = "Organisation policy: CRITICAL keyword alert. ";
             
             return new PolicyDecision(Action.ALERT, reason + "Review recommended before submission (Score: " + score + ").");

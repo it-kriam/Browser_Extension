@@ -2,7 +2,6 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
-import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -11,56 +10,81 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * DatabaseConnectionDetector — 3-Layer Intelligent Database Shield.
+ * DatabaseConnectionDetector — High-Performance Database Shield.
  * L1: Regex detection for JDBC, MongoDB, Redis, and SQL connection URIs.
- * L2: Semantic intent for database architecture leaks.
- * L3: LLM reasoning for suspicious database queries or connection attempts.
+ * L2: Semantic intent for database credential/architecture leaks.
+ * Short-circuit: L1 hit → L2 skipped.
  */
 @Component
 public class DatabaseConnectionDetector implements Detector {
 
+    // ── L1: Connection Strings WITH Credentials ───────────────────────────
     private static final List<Pattern> DB_CONNECTION_PATTERNS = List.of(
-            Pattern.compile("\\bjdbc:[a-z]+://[^\\s]*password=[^\\s&]+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("mongodb(?:\\+srv)?://[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+(?:/[a-zA-Z0-9._-]*)?", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("redis://(?:[a-zA-Z0-9._-]+:)?([a-zA-Z0-9._-]+)@[a-zA-Z0-9.-]+:[0-9]+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(?:postgres|postgresql|mysql|mariadb)://[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+(?:[0-9]+)?(?:/[a-zA-Z0-9._-]*)?", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("\\bjdbc:[a-z]+://[^\\s]*password=[^\\s&]+", Pattern.CASE_INSENSITIVE),
+        Pattern.compile(
+            "mongodb(?:\\+srv)?://[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+(?:/[a-zA-Z0-9._-]*)?",
+            Pattern.CASE_INSENSITIVE),
+        Pattern.compile(
+            "redis://(?:[a-zA-Z0-9._-]+:)?([a-zA-Z0-9._-]+)@[a-zA-Z0-9.-]+:[0-9]+",
+            Pattern.CASE_INSENSITIVE),
+        Pattern.compile(
+            "(?:postgres|postgresql|mysql|mariadb)://[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+(?:[0-9]+)?(?:/[a-zA-Z0-9._-]*)?",
+            Pattern.CASE_INSENSITIVE)
     );
 
+    // ── L1: Connection URLs WITHOUT Credentials (lower risk) ──────────────
     private static final List<Pattern> DB_URL_ONLY_PATTERNS = List.of(
-            Pattern.compile("\\bjdbc:[a-z]+://[a-zA-Z0-9.-]+:[0-9]+(?:/[a-zA-Z0-9._-]*)?", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bDATABASE_URL\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE)
+        Pattern.compile(
+            "\\bjdbc:[a-z]+://[a-zA-Z0-9.-]+:[0-9]+(?:/[a-zA-Z0-9._-]*)*",
+            Pattern.CASE_INSENSITIVE),
+        Pattern.compile("\\bDATABASE_URL\\s*[=:]\\s*\\S+", Pattern.CASE_INSENSITIVE)
     );
 
-    private static final List<String> DB_KEYWORDS = List.of(
-            "DB_PASSWORD", "DATABASE_PASSWORD", "DB_USER", "DATABASE_USERNAME", "DB_CONN_STR"
+    // ── L2: High-Risk DB Credential Keywords (score=85) ───────────────────
+    private static final List<String> DB_CREDENTIAL_KEYWORDS = List.of(
+        "db_password", "database_password", "db_user", "database_username",
+        "db_conn_str", "db_secret", "database_credentials", "db_master_password",
+        "rds_password", "aurora_password", "root_password", "admin_password",
+        "mysql_root_password", "postgres_password", "mongo_password",
+        "redis_password", "db_connection_string", "connection_string"
     );
 
-    public DatabaseConnectionDetector() {
-    }
+    // ── L2: Medium-Risk DB Architecture Keywords (score=65) ───────────────
+    private static final List<String> DB_ARCHITECTURE_KEYWORDS = List.of(
+        "database host", "database port", "database name", "schema name",
+        "table structure", "column names", "primary key", "foreign key",
+        "db migration", "database backup", "rds instance", "rds endpoint",
+        "aurora cluster", "replica set", "sharding key", "replication config",
+        "database schema", "data model", "entity relationship", "db dump"
+    );
+
+    // ── L2: Low-Risk DB Operation Keywords (score=50) ─────────────────────
+    private static final List<String> DB_OPERATION_KEYWORDS = List.of(
+        "database config", "db config", "spring datasource", "hibernate config",
+        "connection pool", "max connections", "idle timeout", "db driver",
+        "orm mapping", "entity mapping", "jpa config", "sequelize config"
+    );
+
+    private static final Pattern INQUIRY_PATTERN = Pattern.compile(
+        "\\b(safe|ok|okay|can i|should i|is it|allowed|policy|how to|is it safe|tell me about)\\b",
+        Pattern.CASE_INSENSITIVE);
 
     @Override
-    public String getName() {
-        return "DatabaseConnectionDetector";
-    }
+    public String getName() { return "DatabaseConnectionDetector"; }
 
     @Override
     public List<DetectionResult> detect(DetectionContext context) {
-        return detect(context.getPrompt(), context.getDecision());
-    }
-
-    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
+        String prompt = context.getPrompt();
+        String normalized = context.getNormalizedPrompt();
+        
         if (prompt == null || prompt.isBlank()) return results;
 
-        // ── LAYER 1: REGEX ───────────────────────────────────────────
+        // ── LAYER 1: REGEX (Original Text — Short-circuits) ────────────────
         if (runRegexLayer(prompt, results)) return results;
 
-        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
-        runSemanticLayer(prompt, results);
-        if (!results.isEmpty()) return results;
-
-        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
-        runLlamaLayer(prompt, results, decision);
+        // ── LAYER 2: SEMANTIC (Normalized Text) ───────────────────────────
+        runSemanticLayer(prompt, normalized, results);
 
         return results;
     }
@@ -70,33 +94,60 @@ public class DatabaseConnectionDetector implements Detector {
         for (Pattern p : DB_CONNECTION_PATTERNS) {
             Matcher m = p.matcher(prompt);
             if (m.find()) {
-                results.add(new DetectionResult(RiskType.SECRET, 95, "L1_DB: Connection String with Credentials", m.group()));
+                results.add(new DetectionResult(RiskType.SECRET, 95,
+                    "L1_DB_REGEX: Connection String with Credentials", m.group()));
                 match = true;
             }
         }
         for (Pattern p : DB_URL_ONLY_PATTERNS) {
             Matcher m = p.matcher(prompt);
             if (m.find()) {
-                results.add(new DetectionResult(RiskType.SECRET, 75, "L1_DB: Connection URL", m.group()));
+                results.add(new DetectionResult(RiskType.SECRET, 75,
+                    "L1_DB_REGEX: Connection URL", m.group()));
                 match = true;
             }
         }
         return match;
     }
 
-    private void runSemanticLayer(String prompt, List<DetectionResult> results) {
-        String lower = prompt.toLowerCase();
-        for (String kw : DB_KEYWORDS) {
-            if (lower.contains(kw.toLowerCase())) {
-                results.add(new DetectionResult(RiskType.SECRET, 85, "L2_DB_KEYWORD: " + kw, kw));
+    private void runSemanticLayer(String original, String normalized, List<DetectionResult> results) {
+        String lowerOrig = original.toLowerCase();
+        boolean isSafetyInquiry = INQUIRY_PATTERN.matcher(normalized).find() || lowerOrig.contains("?");
+
+        // Inquiry logic: Questions about safety should be ALLOW (low score)
+        if (isSafetyInquiry && !runRegexLayer(original, new ArrayList<>())) {
+            results.add(new DetectionResult(RiskType.SECRET, 20, "L2_DB_INQUIRY",
+                "INFO: User is inquiring about database safety, not disclosing connection strings."));
+            return;
+        }
+
+        // Tier 1: Credential field names mentioned → REDACT (60-79)
+        // (Real connection strings with passwords caught by L1 at 95)
+        for (String kw : DB_CREDENTIAL_KEYWORDS) {
+            String cleanKw = kw.replace("_", "").toLowerCase();
+            if (normalized.contains(cleanKw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 70,
+                    "L2_DB_CREDENTIAL: " + kw, kw));
                 return;
             }
         }
-    }
-
-    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
-        if (decision.score >= 80 && (decision.reason.toUpperCase().contains("DATABASE") || decision.reason.toUpperCase().contains("CONNECTION") || decision.reason.toUpperCase().contains("SQL"))) {
-            results.add(new DetectionResult(RiskType.SECRET, decision.score, "L3_DB_LLM: " + decision.reason, prompt));
+        // Tier 2: DB architecture detail → ALERT (40-59)
+        for (String kw : DB_ARCHITECTURE_KEYWORDS) {
+            String cleanKw = kw.replace(" ", "").toLowerCase();
+            if (normalized.contains(cleanKw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 55,
+                    "L2_DB_ARCHITECTURE: " + kw, kw));
+                return;
+            }
+        }
+        // Tier 3: DB operational config → ALERT (40-59)
+        for (String kw : DB_OPERATION_KEYWORDS) {
+            String cleanKw = kw.replace(" ", "").toLowerCase();
+            if (normalized.contains(cleanKw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 45,
+                    "L2_DB_OPERATION: " + kw, kw));
+                return;
+            }
         }
     }
 }

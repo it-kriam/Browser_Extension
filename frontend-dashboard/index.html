@@ -177,7 +177,7 @@
     .card-hover:active {
       transform: translateY(0px) scale(0.99);
       box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
-      background: rgba(255,255,255,.03) !important;
+      background: rgba(255, 255, 255, .03) !important;
     }
 
     .stat-card {
@@ -348,7 +348,8 @@
       color: #f0f6fc;
     }
 
-    button, [role="button"] {
+    button,
+    [role="button"] {
       background: transparent;
       outline: none;
     }
@@ -358,7 +359,8 @@
       outline-offset: 2px;
     }
 
-    a, a:visited {
+    a,
+    a:visited {
       color: inherit;
     }
   </style>
@@ -539,12 +541,12 @@
       useEffect(() => {
         if (!ref.current) return;
         const days = [], labels = [];
-        for (let i = range - 1; i >= 0; i--) { 
-          const d = new Date(); d.setDate(d.getDate() - i); 
-          days.push(d.toDateString()); 
+        for (let i = range - 1; i >= 0; i--) {
+          const d = new Date(); d.setDate(d.getDate() - i);
+          days.push(d.toDateString());
           // Show only certain labels if range is large
           if (range <= 7 || i % Math.floor(range / 6) === 0 || i === 0 || i === range - 1) {
-            labels.push(d.toLocaleDateString([], { month: "short", day: "numeric" })); 
+            labels.push(d.toLocaleDateString([], { month: "short", day: "numeric" }));
           } else {
             labels.push("");
           }
@@ -801,7 +803,7 @@
 
             {/* body */}
             <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-              
+
               {/* metadata metrics grid — hidden in compact variant */}
               {log.variant !== "compact" && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
@@ -1030,14 +1032,6 @@
               })}
             </div>
           </div>
-
-          {/*
-          ═══════════════════════════════════════════════════════════════════
-          COMMENTED OUT: "All policies for {userId}" full table
-          (ID / Sub-user / Keyword List / Action / Description rows for
-           rohan-user and kushal-user)
-          ═══════════════════════════════════════════════════════════════════
-          */}
         </div>
       );
     }
@@ -1211,7 +1205,8 @@
 
           {/* ── STATUS MESSAGE (shown for both delete and save) ── */}
           {msg && (
-            <div style={{ marginBottom: 12, padding: "8px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+            <div style={{
+              marginBottom: 12, padding: "8px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600,
               background: msg.startsWith("❌") ? "rgba(218,54,51,.12)" : msg.startsWith("⏳") ? "rgba(56,139,253,.1)" : "rgba(46,160,67,.12)",
               border: `1px solid ${msg.startsWith("❌") ? "rgba(218,54,51,.35)" : msg.startsWith("⏳") ? "rgba(56,139,253,.3)" : "rgba(46,160,67,.3)"}`,
               color: msg.startsWith("❌") ? "#f85149" : msg.startsWith("⏳") ? "#58a6ff" : "#3fb950",
@@ -1303,33 +1298,6 @@
               {msg && <span style={{ fontSize: 12, color: msg.startsWith("❌") ? "#f85149" : "#3fb950" }}>{msg}</span>}
             </div>
           </div>
-
-          {/*
-          ═══════════════════════════════════════════════════════════════
-          COMMENTED OUT: Filter bar + policy tables grouped by org
-          (as requested — everything below the Add New Policy form)
-          ═══════════════════════════════════════════════════════════════
-
-          <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-            {["ALL",...orgs].map(org=>(
-              <button key={org} onClick={()=>setFilter(org)} ...>
-                {org}
-              </button>
-            ))}
-            <button onClick={load} ...>⟳ Refresh</button>
-          </div>
-
-          {loading ? (
-            <div ...>Loading policies...</div>
-          ) : Object.keys(grouped).length===0 ? (
-            <div ...>No keyword policies found.</div>
-          ) : Object.entries(grouped).map(([org, rows]) => (
-            <div key={org} style={cardStyle}>
-              ... policy table rows ...
-            </div>
-          ))}
-          */}
-
         </div>
       );
     }
@@ -1375,11 +1343,11 @@
         try {
           const u = userRef.current, f = filterRef.current;
           const logsUrl = isA && f === "ALL"
-            ? `${API}/api/analytics/recent-logs?limit=200`
-            : `${API}/api/analytics/my-prompts?userId=${f === "ALL" ? u.userId : f}&limit=200`;
+            ? `${API}/api/analytics/recent-logs?limit=1000`
+            : `${API}/api/analytics/my-prompts?userId=${f === "ALL" ? u.userId : f}&limit=1000`;
           const [sum, tools, risks, logs, users, tokenData] = await Promise.all([
             isA ? fetch(`${API}/api/analytics/risk-summary`).then(r => r.json()).catch(() => ({}))
-                : fetch(`${API}/api/analytics/my-stats?userId=${u.userId}`).then(r => r.json()).catch(() => ({})),
+              : fetch(`${API}/api/analytics/my-stats?userId=${u.userId}`).then(r => r.json()).catch(() => ({})),
             fetch(`${API}/api/analytics/tool-usage`).then(r => r.json()).catch(() => []),
             fetch(`${API}/api/analytics/risk-breakdown`).then(r => r.json()).catch(() => []),
             fetch(logsUrl).then(r => r.json()).catch(() => []),
@@ -1433,13 +1401,31 @@
         return logs.filter(l => new Date(l.timestamp || l.created_at) >= cutoff);
       }, [logs, range]);
 
+      const filteredRisks = useMemo(() => {
+        const counts = {};
+        filteredLogs.forEach(l => {
+          const r = l.highestRiskType || "SAFE";
+          counts[r] = (counts[r] || 0) + 1;
+        });
+        return Object.entries(counts).map(([riskType, count]) => ({ riskType, count }));
+      }, [filteredLogs]);
+
+      const filteredTools = useMemo(() => {
+        const counts = {};
+        filteredLogs.forEach(l => {
+          const t = l.tool || "Unknown";
+          counts[t] = (counts[t] || 0) + 1;
+        });
+        return Object.entries(counts).map(([tool, count]) => ({ tool, count }));
+      }, [filteredLogs]);
+
       const useLocalStats = isA && filter !== "ALL";
 
       const displaySafe = useLocalStats ? filteredLogs.filter(l => l.action === "ALLOW").length : (S.allowed ?? S.allowedPrompts ?? filteredLogs.filter(l => l.action === "ALLOW").length);
-      const displayRed  = useLocalStats ? filteredLogs.filter(l => l.action === "REDACT").length : (S.redacted ?? S.redactedPrompts ?? filteredLogs.filter(l => l.action === "REDACT").length);
-      const displayBlk  = useLocalStats ? filteredLogs.filter(l => l.action === "BLOCK").length : (S.blocked ?? S.blockedPrompts ?? filteredLogs.filter(l => l.action === "BLOCK").length);
+      const displayRed = useLocalStats ? filteredLogs.filter(l => l.action === "REDACT").length : (S.redacted ?? S.redactedPrompts ?? filteredLogs.filter(l => l.action === "REDACT").length);
+      const displayBlk = useLocalStats ? filteredLogs.filter(l => l.action === "BLOCK").length : (S.blocked ?? S.blockedPrompts ?? filteredLogs.filter(l => l.action === "BLOCK").length);
       const displayCrit = useLocalStats ? filteredLogs.filter(l => l.action === "ALERT").length : (S.alerted ?? S.alertedPrompts ?? filteredLogs.filter(l => l.action === "ALERT").length);
-      const displayTot  = useLocalStats ? filteredLogs.length : (S.total ?? S.totalPrompts ?? filteredLogs.length);
+      const displayTot = useLocalStats ? filteredLogs.length : (S.total ?? S.totalPrompts ?? filteredLogs.length);
 
       const br = displayTot > 0 ? Math.round(displayBlk / displayTot * 100) : 0;
 
@@ -1449,10 +1435,10 @@
       const fltUsed = tkLogsRaw;
       const fltSaved = svLogsRaw;
 
-      const dTkUsed  = useLocalStats ? fltUsed.reduce((a,l) => a + nv(l.tokens), 0) : (S.tokensUsed ?? filteredLogs.reduce((a,l) => a + nv(l.tokensUsed || l.tokens_used || l.tokens), 0));
-      const dTkSaved = useLocalStats ? fltSaved.reduce((a,l) => a + nv(l.saved), 0) : (S.tokensSaved ?? filteredLogs.reduce((a,l) => a + nv(l.tokensSaved || l.tokens_saved || l.saved), 0));
-      const dCUsed   = useLocalStats ? fltUsed.reduce((a,l) => a + nv(l.cost), 0) : (S.costUsed ?? filteredLogs.reduce((a,l) => a + nv(l.costUsed || l.cost_used || l.cost), 0));
-      const dCSaved  = useLocalStats ? fltSaved.reduce((a,l) => a + nv(l.value), 0) : (S.costSaved ?? filteredLogs.reduce((a,l) => a + nv(l.costSaved || l.cost_saved || l.savings || l.value || l.costSaved), 0));
+      const dTkUsed = useLocalStats ? fltUsed.reduce((a, l) => a + nv(l.tokens), 0) : (S.tokensUsed ?? filteredLogs.reduce((a, l) => a + nv(l.tokensUsed || l.tokens_used || l.tokens), 0));
+      const dTkSaved = useLocalStats ? fltSaved.reduce((a, l) => a + nv(l.saved), 0) : (S.tokensSaved ?? filteredLogs.reduce((a, l) => a + nv(l.tokensSaved || l.tokens_saved || l.saved), 0));
+      const dCUsed = useLocalStats ? fltUsed.reduce((a, l) => a + nv(l.cost), 0) : (S.costUsed ?? filteredLogs.reduce((a, l) => a + nv(l.costUsed || l.cost_used || l.cost), 0));
+      const dCSaved = useLocalStats ? fltSaved.reduce((a, l) => a + nv(l.value), 0) : (S.costSaved ?? filteredLogs.reduce((a, l) => a + nv(l.costSaved || l.cost_saved || l.savings || l.value || l.costSaved), 0));
 
       const comply = [
         { label: "GDPR", status: br < 15 ? "Compliant" : "Needs Review" },
@@ -1486,34 +1472,34 @@
               </div>
             )}
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 18 }}>
-               {/* Time Display Only */}
-               <LiveClock />
+              {/* Time Display Only */}
+              <LiveClock />
 
-               {/* Global Refresh Button */}
-               <button onClick={load} className="btn btn-ghost" 
-                 style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 14px", background: "rgba(88,166,255,0.06)", border: "1px solid rgba(88,166,255,0.15)", borderRadius: 20, color: "#58a6ff", fontSize: 11, fontWeight: 800, transition: "all .2s", letterSpacing: ".5px", textTransform: "uppercase" }}
-                 onMouseEnter={e => { e.currentTarget.style.background = "rgba(88,166,255,0.12)"; e.currentTarget.style.borderColor = "#58a6ff66"; e.currentTarget.style.boxShadow = "0 0 15px rgba(88,166,255,0.2)"; }}
-                 onMouseLeave={e => { e.currentTarget.style.background = "rgba(88,166,255,0.06)"; e.currentTarget.style.borderColor = "rgba(88,166,255,0.15)"; e.currentTarget.style.boxShadow = "none"; }}>
-                 <span className={loading ? "sp" : ""} style={{ fontSize: 14, display: "inline-block" }}>{loading ? "⏳" : "⟳"}</span>
-                 <span>{loading ? "Syncing..." : "Refresh"}</span>
-               </button>
-               
-               {/* User Dropdown */}
-               <div style={{ position: "relative" }} id="user-menu-container">
-                 <button onClick={() => setMenuOpen(!menuOpen)} className="btn btn-ghost" 
-                   style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: isA ? "rgba(163,113,247,0.08)" : "rgba(56,139,253,0.08)", border: `1px solid ${isA ? "rgba(163,113,247,0.2)" : "rgba(56,139,253,0.2)"}`, borderRadius: 20, color: isA ? "#a371f7" : "#58a6ff", fontSize: 13, fontWeight: 700 }}>
-                   <span style={{ fontSize: 16 }}>{isA ? "👑" : "👤"}</span>
-                   <span>{user.name || user.userId}</span>
-                   <span style={{ fontSize: 9, opacity: .6, transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}>▼</span>
-                 </button>
-                 {menuOpen && (
-                   <div className="fade-up" style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 140, background: "#161b22", border: "1px solid #30363d", borderRadius: 8, padding: 4, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", zIndex: 1000 }}>
-                     <button className="btn btn-danger" onClick={onLogout} style={{ width: "100%", padding: "8px", fontSize: 12, textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
-                       <span>🚪</span> Sign Out
-                     </button>
-                   </div>
-                 )}
-               </div>
+              {/* Global Refresh Button */}
+              <button onClick={load} className="btn btn-ghost"
+                style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 14px", background: "rgba(88,166,255,0.06)", border: "1px solid rgba(88,166,255,0.15)", borderRadius: 20, color: "#58a6ff", fontSize: 11, fontWeight: 800, transition: "all .2s", letterSpacing: ".5px", textTransform: "uppercase" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(88,166,255,0.12)"; e.currentTarget.style.borderColor = "#58a6ff66"; e.currentTarget.style.boxShadow = "0 0 15px rgba(88,166,255,0.2)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(88,166,255,0.06)"; e.currentTarget.style.borderColor = "rgba(88,166,255,0.15)"; e.currentTarget.style.boxShadow = "none"; }}>
+                <span className={loading ? "sp" : ""} style={{ fontSize: 14, display: "inline-block" }}>{loading ? "⏳" : "⟳"}</span>
+                <span>{loading ? "Syncing..." : "Refresh"}</span>
+              </button>
+
+              {/* User Dropdown */}
+              <div style={{ position: "relative" }} id="user-menu-container">
+                <button onClick={() => setMenuOpen(!menuOpen)} className="btn btn-ghost"
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: isA ? "rgba(163,113,247,0.08)" : "rgba(56,139,253,0.08)", border: `1px solid ${isA ? "rgba(163,113,247,0.2)" : "rgba(56,139,253,0.2)"}`, borderRadius: 20, color: isA ? "#a371f7" : "#58a6ff", fontSize: 13, fontWeight: 700 }}>
+                  <span style={{ fontSize: 16 }}>{isA ? "👑" : "👤"}</span>
+                  <span>{user.name || user.userId}</span>
+                  <span style={{ fontSize: 9, opacity: .6, transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}>▼</span>
+                </button>
+                {menuOpen && (
+                  <div className="fade-up" style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 140, background: "#161b22", border: "1px solid #30363d", borderRadius: 8, padding: 4, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", zIndex: 1000 }}>
+                    <button className="btn btn-danger" onClick={onLogout} style={{ width: "100%", padding: "8px", fontSize: 12, textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span>🚪</span> Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {isMobile && (
               <div style={{ width: "100%", display: "flex", gap: 4, padding: "7px 0 9px", overflowX: "auto", borderTop: "1px solid #21262d", marginTop: 8 }}>
@@ -1525,165 +1511,134 @@
           {/* ══ CONTENT ══ */}
 
           {tab === "overview" ? (
-            <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "10px 16px 8px", gap: 8, boxSizing: "border-box" }}>
+            <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "10px 16px 12px", gap: 10, boxSizing: "border-box" }}>
 
-              {/* STAT CARDS - ROW 1 (ALL 7 IN ONE LINE) */}
-              <div style={{ display: "grid", gap: 10, flexShrink: 0, gridTemplateColumns: isMobile ? "repeat(2,1fr)" : (isA ? "repeat(5, 1fr) 1.5fr" : "repeat(5, 1fr)") }}>
+              {/* 🌟 PREMIUM UNIFIED STAT ROW */}
+              {/* 🌟 PREMIUM UNIFIED STAT ROW */}
+              <div style={{
+                display: "grid",
+                gap: 8,
+                flexShrink: 0,
+                gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : `repeat(${[true, true, true, true, true, isA, isA].filter(Boolean).length}, 1fr)`
+              }}>
                 {[
-                  { label: "Total Prompts", val: displayTot, color: "#fb8f44", bg: "linear-gradient(135deg,#1e1208,#170e06)", border: "#e3662055", icon: "📊", action: "ALL" },
-                  { label: "Safe Prompts", val: displaySafe, color: "#3fb950", bg: "linear-gradient(135deg,#0f2318,#0d1a10)", border: "#2ea04355", icon: "✅", action: "ALLOW" },
-                  { label: "Redacted", val: displayRed, color: "#a371f7", bg: "linear-gradient(135deg,#160e22,#110c1a)", border: "#a371f755", icon: "✏️", action: "REDACT" },
-                  { label: "Blocked", val: displayBlk, color: "#f85149", bg: "linear-gradient(135deg,#1e0e0d,#160c0c)", border: "#da363355", icon: "🚫", action: "BLOCK" },
-                  { label: "Critical", val: displayCrit, color: "#fca5a5", bg: "linear-gradient(135deg,#1e1608,#17120a)", border: "#d2992255", icon: "⚡", action: "ALERT" },
-                ].map(({ label, val, color, bg, border, icon, action }) => (
-                  <div key={label} className="card-hover fade-up" onClick={() => { if (action) { setLogActionFilter(action); setTab("logs"); } }}
-                    style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: "14px 16px 0", display: "flex", flexDirection: "column", cursor: "pointer", transition: "transform .15s, box-shadow .15s", overflow: "hidden" }}
-                    onMouseEnter={e => { if (action) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 20px ${color}28`; } }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                      <span style={{ fontSize: 13 }}>{icon}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: ".8px", textTransform: "uppercase" }}>{label}</span>
+                  { label: "Prompts", val: displayTot, color: "#58a6ff", icon: "📊", action: "ALL", bg: "rgba(88,166,255,0.04)", bd: "rgba(88,166,255,0.15)" },
+                  { label: "Safe", val: displaySafe, color: "#3fb950", icon: "✅", action: "ALLOW", bg: "rgba(63,185,80,0.04)", bd: "rgba(63,185,80,0.15)" },
+                  { label: "Redacted", val: displayRed, color: "#a371f7", icon: "✏️", action: "REDACT", bg: "rgba(163,113,247,0.04)", bd: "rgba(163,113,247,0.15)" },
+                  { label: "Blocked", val: displayBlk, color: "#f85149", icon: "🚫", action: "BLOCK", bg: "rgba(248,81,73,0.04)", bd: "rgba(248,81,73,0.15)" },
+                  { label: "Critical", val: displayCrit, color: "#fca5a5", icon: "⚡", action: "ALERT", bg: "rgba(210,153,34,0.04)", bd: "rgba(210,153,34,0.15)" },
+                  { label: "Users", val: users.length, color: "#e6edf3", icon: "👥", action: "USERS", bg: "rgba(255,255,255,0.02)", bd: "rgba(255,255,255,0.1)", admin: true },
+                  { label: "Tools", val: tools.length, color: "#e6edf3", icon: "🤖", action: "TOOLS", bg: "rgba(255,255,255,0.02)", bd: "rgba(255,255,255,0.1)", admin: true },
+                ].filter(c => !c.admin || isA).map(({ label, val, color, icon, action, bg, bd }) => (
+                  <div key={label} onClick={() => {
+                    if (action === "USERS") {
+                      setTab("analytics");
+                      setTimeout(() => document.getElementById("user-directory-card")?.scrollIntoView({ behavior: "smooth" }), 150);
+                    } else if (action === "TOOLS") {
+                      setTab("analytics");
+                      setTimeout(() => document.getElementById("ai-tool-usage-chart")?.scrollIntoView({ behavior: "smooth" }), 150);
+                    } else if (action === "ALL") {
+                      setLogActionFilter("ALL");
+                      setTab("logs");
+                    } else if (action) {
+                      setLogActionFilter(action);
+                      setTab("logs");
+                    }
+                  }}
+                    style={{ background: bg, border: `1px solid ${bd}`, borderRadius: 8, padding: "8px 12px", cursor: "pointer", transition: "transform .1s, border-color .1s, box-shadow .1s" }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.borderColor = bd; e.currentTarget.style.boxShadow = "none"; }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                      <span style={{ fontSize: 10 }}>{icon}</span>
+                      <span style={{ fontSize: 9, fontWeight: 800, color: "#8b949e", letterSpacing: ".5px", textTransform: "uppercase" }}>{label}</span>
                     </div>
-                    <div style={{ fontSize: 44, fontWeight: 800, color: "#f0f6fc", lineHeight: 1, letterSpacing: "-1.5px", fontVariantNumeric: "tabular-nums", marginBottom: 12 }}>{val.toLocaleString()}</div>
-                    <div style={{ marginTop: "auto", padding: "6px 0", borderTop: `1px solid ${color}22`, fontSize: 10, color: color + "bb", fontWeight: 700, letterSpacing: ".8px", textAlign: "center" }}>VIEW LOGS →</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: "#f0f6fc", lineHeight: 1 }}>{nv(val).toLocaleString()}</div>
                   </div>
                 ))}
-                
-                {/* ADMIN INSIGHTS CARD */}
-                {isA && (
-                  <div className="card fade-up" style={{ padding: "8px 12px", display: "flex", flexDirection: "column", borderRadius: 9 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
-                      <span style={{ fontSize: 13, color: "#f85149" }}>📍</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, color: "#6e7681", letterSpacing: ".7px", textTransform: "uppercase" }}>Admin</span>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, flex: 1 }}>
-                      <div onClick={() => { 
-                        setTab("analytics"); 
-                        setTimeout(() => {
-                          const el = document.getElementById("user-directory-card");
-                          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                        }, 200);
-                      }} style={{ cursor: "pointer", background: "rgba(255,255,255,.02)", border: "1px solid #30363d", borderRadius: 7, padding: "6px", display: "flex", flexDirection: "column" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
-                          <span style={{ fontSize: 12, color: "#a371f7" }}>👥</span>
-                          <span style={{ fontSize: 8, color: "#8b949e", fontWeight: 700, textTransform: "uppercase" }}>Users</span>
-                        </div>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: "#e6edf3" }}>{users.length}</div>
-                        <div style={{ marginTop: "auto", fontSize: 8, color: "#58a6ff", fontWeight: 700 }}>VIEW</div>
-                      </div>
-                      <div onClick={() => { 
-                        setTab("analytics"); 
-                        setTimeout(() => {
-                           const el = document.getElementById("ai-tool-usage-chart");
-                           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }, 200);
-                      }} style={{ cursor: "pointer", background: "rgba(255,255,255,.02)", border: "1px solid #30363d", borderRadius: 7, padding: "6px", display: "flex", flexDirection: "column" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
-                          <span style={{ fontSize: 12, color: "#fb8f44" }}>🤖</span>
-                          <span style={{ fontSize: 8, color: "#8b949e", fontWeight: 700, textTransform: "uppercase" }}>Tools</span>
-                        </div>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: "#e6edf3" }}>{tools.length}</div>
-                        <div style={{ marginTop: "auto", fontSize: 8, color: "#58a6ff", fontWeight: 700 }}>VIEW</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
-
-              {/* MAIN GRID */}
-              <div style={{ flex: 1, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "62% 38%", gap: 8, minHeight: 0 }}>
-                {/* LEFT */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
-                  <div className="card fade-up" style={{ flex: "0 0 55%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              {/* 📊 MAIN ANALYTICS GRID */}
+              <div style={{ flex: 1, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "62% 38%", gap: 10, minHeight: 0 }}>
+                {/* LEFT: Activity & Alerts */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+                  <div className="card" style={{ flex: "0 0 48%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+                    <div style={{ padding: "8px 16px", borderBottom: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 14 }}>📈</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Prompt Activity</span>
+                        <span style={{ fontSize: 13 }}>📈</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#e6edf3" }}>Prompt Activity</span>
                       </div>
-                      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                        <select value={range} onChange={e => setRange(parseInt(e.target.value))} 
-                          style={{ appearance: "none", background: "transparent", border: "none", color: "#6e7681", fontSize: 11, fontWeight: 500, outline: "none", cursor: "pointer", paddingRight: "14px" }}>
-                          <option value={7} style={{ background: "#0d1117" }}>Last 7 days</option>
-                          <option value={15} style={{ background: "#0d1117" }}>Last 15 days</option>
-                          <option value={30} style={{ background: "#0d1117" }}>Last 30 days</option>
-                        </select>
-                        <span style={{ fontSize: 8, color: "#484f58", marginLeft: "-10px", pointerEvents: "none" }}>▼</span>
-                      </div>
+                      <select value={range} onChange={e => setRange(parseInt(e.target.value))}
+                        style={{ appearance: "none", background: "rgba(255,255,255,0.05)", border: "1px solid #30363d", color: "#8b949e", fontSize: 10, borderRadius: 4, padding: "2px 8px", outline: "none", cursor: "pointer" }}>
+                        <option value={7}>7 Days</option>
+                        <option value={15}>15 Days</option>
+                        <option value={30}>30 Days</option>
+                      </select>
                     </div>
-                    <div style={{ flex: 1, padding: "8px 14px 10px", minHeight: 0, overflow: "hidden", position: "relative" }}><LineChart logs={filteredLogs} range={range} /></div>
+                    <div style={{ flex: 1, padding: "8px 12px", minHeight: 0 }}><LineChart logs={filteredLogs} range={range} /></div>
                   </div>
-                  <div className="card fade-up" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "10px 16px 8px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 14 }}>⚠️</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>Recent Alerts</span>
-                      <span style={{ marginLeft: "auto", fontSize: 11, color: "#484f58" }}>{displayTot.toLocaleString()} total</span>
+
+                  <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+                    <div style={{ padding: "8px 16px", borderBottom: "1px solid #21262d", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 13, color: "#fca5a5" }}>⚡</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#e6edf3" }}>Recent Alerts</span>
                     </div>
-                    {filteredLogs.length === 0 ? (
-                      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "#484f58" }}>
-                        <span style={{ fontSize: 24 }}>🎉</span>
-                        <span style={{ fontSize: 12, color: "#6e7681" }}>No events yet — send some prompts!</span>
-                      </div>
-                    ) : (
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
-                          <thead>
-                            <tr style={{ background: "rgba(0,0,0,.4)" }}>
-                              {["TIMESTAMP", "USER", "RISK TYPE", "ACTION", "BROWSER"].map(h => (
-                                <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#6e7681", fontWeight: 600, fontSize: 10, letterSpacing: ".7px", textTransform: "uppercase", borderBottom: "1px solid #21262d", whiteSpace: "nowrap" }}>{h}</th>
-                              ))}
+                    <div style={{ flex: 1, overflowY: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                        <thead style={{ position: "sticky", top: 0, background: "#161b22", zIndex: 1, borderBottom: "1px solid #21262d" }}>
+                          <tr style={{ textAlign: "left" }}>
+                            <th style={{ padding: "8px 16px", color: "#6e7681", fontWeight: 700 }}>TIMESTAMP</th>
+                            <th style={{ padding: "8px 16px", color: "#6e7681", fontWeight: 700 }}>USER</th>
+                            <th style={{ padding: "8px 16px", color: "#6e7681", fontWeight: 700 }}>RISK TYPE</th>
+                            <th style={{ padding: "8px 16px", color: "#6e7681", fontWeight: 700 }}>ACTION</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredLogs.slice(0, 30).map((l, i) => (
+                            <tr key={i} onClick={() => setPromptModal(l)} className="tr-hover" style={{ borderBottom: "1px solid rgba(255,255,255,0.02)", cursor: "pointer" }}>
+                              <td style={{ padding: "8px 16px", color: "#484f58", fontFamily: "'JetBrains Mono',monospace" }}>{fmtAge(l.timestamp)}</td>
+                              <td style={{ padding: "8px 16px", color: "#58a6ff", fontWeight: 600 }}>{l.userId || "—"}</td>
+                              <td style={{ padding: "8px 16px", color: "#c9d1d9" }}>{l.highestRiskType || "SAFE"}</td>
+                              <td style={{ padding: "8px 16px" }}><Badge action={l.action} slim /></td>
                             </tr>
-                          </thead>
-                        </table>
-                        <div className="scroll-y" style={{ flex: 1, overflowY: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
-                            <tbody>
-                              {filteredLogs.map((l, i) => (
-                                <tr key={i} className="tr-hover" style={{ borderBottom: "1px solid rgba(255,255,255,.035)" }}>
-                                  <td style={{ padding: "8px 12px", color: "#6e7681", fontFamily: "'Inter',sans-serif", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmtAge(l.timestamp || l.created_at)}</td>
-                                  <td style={{ padding: "8px 12px", color: "#79c0ff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.userId || l.user_id || "—"}</td>
-                                  <td style={{ padding: "8px 12px" }}>
-                                    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.highestRiskType || l.highest_risk_type || "NONE"}</span>
-                                  </td>
-                                  <td style={{ padding: "8px 12px" }}><Badge action={l.action} /></td>
-                                  <td style={{ padding: "8px 12px", color: "#3fb950", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.browserName || l.browser_name || "—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-                {/* RIGHT */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
-                  <div className="card fade-up" style={{ flex: "0 0 60%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "8px 14px 6px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13 }}>⚙️</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#e6edf3" }}>Top Risk Categories</span>
+
+                {/* RIGHT: Risks & Tokens */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+                  <div className="card" style={{ flex: "0 0 74%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+                    <div style={{ padding: "8px 16px", borderBottom: "1px solid #21262d", flexShrink: 0 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>⚙️ Top Risks</span>
                     </div>
-                    <div style={{ flex: 1, padding: "4px 8px 6px", minHeight: 0, overflow: "hidden", position: "relative" }}><DonutChart data={risks} /></div>
+                    <div style={{ flex: 1, padding: 12, minHeight: 0 }}><DonutChart data={risks} /></div>
                   </div>
-                  <div className="card fade-up" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRadius: 10 }}>
-                    <div style={{ padding: "8px 14px 6px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13, color: "#fbbf24" }}>🪙</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#e6edf3" }}>Token Summary</span>
-                      <span onClick={() => setTab("tokens")} style={{ marginLeft: "auto", fontSize: 10, color: "#58a6ff", cursor: "pointer", fontWeight: 600 }}>DETAILS</span>
+
+                  <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+                    <div style={{ padding: "4px 14px", borderBottom: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 11 }}>🪙</span>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "#e6edf3", textTransform: "uppercase", letterSpacing: "1px" }}>Efficiency</span>
+                      </div>
+                      <button onClick={() => setTab("tokens")}
+                        className="btn-ghost"
+                        style={{ background: "rgba(88,166,255,0.06)", border: "1px solid rgba(88,166,255,0.12)", color: "#58a6ff", fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 4, cursor: "pointer" }}>DETAILS</button>
                     </div>
-                    <div style={{ flex: 1, padding: "4px 8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                    <div style={{ flex: 1, padding: "6px 12px 8px", display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "repeat(2, 1fr)", gap: 6, minHeight: 0 }}>
                       {[
-                        { label: "Used", val: dTkUsed.toLocaleString(), color: "#fb8f44", key: "◆ USED", bd: "rgba(251,143,68,0.2)", tab: "used" },
-                        { label: "Saved", val: dTkSaved.toLocaleString(), color: "#58a6ff", key: "🛡️ SAVED", bd: "rgba(88,166,255,0.2)", tab: "saved" },
-                        { label: "Cost", val: `$${dCUsed.toFixed(4)}`, color: "#fca5a5", key: "💰 COST", bd: "rgba(248,81,73,0.2)", tab: "used" },
-                        { label: "S-Cost", val: `$${dCSaved.toFixed(4)}`, color: "#3fb950", key: "💎 SAVINGS", bd: "rgba(63,185,80,0.2)", tab: "saved" },
+                        { label: "Used", val: nv(dTkUsed).toLocaleString(), color: "#fb8f44", bg: "rgba(251,143,68,0.03)", tab: "used" },
+                        { label: "Saved", val: nv(dTkSaved).toLocaleString(), color: "#58a6ff", bg: "rgba(88,166,255,0.03)", tab: "saved" },
+                        { label: "Cost", val: `$${nv(dCUsed).toFixed(4)}`, color: "#fca5a5", bg: "rgba(248,81,73,0.03)", tab: "used" },
+                        { label: "Value", val: `$${nv(dCSaved).toFixed(4)}`, color: "#3fb950", bg: "rgba(63,185,80,0.03)", tab: "saved" },
                       ].map(tk => (
-                        <div key={tk.key} onClick={() => { setTab("tokens"); setSubTokenTab(tk.tab); }}
-                          style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${tk.bd}`, borderRadius: 8, padding: "2px 6px", display: "flex", flexDirection: "column", justifyContent: "center", cursor: "pointer", transition: "transform .1s" }}
-                          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.02)"}
-                          onMouseLeave={e => e.currentTarget.style.transform = ""}>
-                          <div style={{ color: tk.color, fontSize: 7, fontWeight: 800, marginBottom: 0, letterSpacing: ".3px" }}>{tk.key}</div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: "#f0f6fc", letterSpacing: "-.5px" }}>{tk.val}</div>
+                        <div key={tk.label} onClick={() => { setTab("tokens"); setSubTokenTab(tk.tab); }}
+                          style={{ background: tk.bg, borderRadius: 6, padding: "2px 10px", display: "flex", flexDirection: "column", justifyContent: "center", border: "1px solid rgba(255,255,255,0.01)", cursor: "pointer", transition: "all .1s", minHeight: 0, overflow: "hidden" }}
+                          onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.background = tk.bg.replace("0.03", "0.06"); }}
+                          onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.borderColor = "rgba(255,255,255,0.01)"; e.currentTarget.style.background = tk.bg; }}>
+                          <span style={{ color: "#6e7681", fontSize: 7, fontWeight: 800, textTransform: "uppercase", marginBottom: 0, letterSpacing: ".5px" }}>{tk.label}</span>
+                          <span style={{ color: tk.color, fontSize: 11, fontWeight: 900, lineHeight: 1 }}>{tk.val}</span>
                         </div>
                       ))}
                     </div>
@@ -1691,20 +1646,19 @@
                 </div>
               </div>
 
-              {/* COMPLIANCE STRIP */}
-              <div className="fade-up" style={{ flexShrink: 0, padding: "8px 14px", background: "rgba(13,17,23,.8)", borderRadius: 8, border: "1px solid #21262d", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", position: "relative" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#6e7681", marginRight: 4, whiteSpace: "nowrap" }}>📋 Compliance:</span>
-                {comply.map(c => (
-                  <span key={c.label} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#d29922", padding: "4px 8px" }}>
-                    <span>!</span>
-                    <span style={{ color: "#c9d1d9" }}>{c.label} Review</span>
-                  </span>
-                ))}
-                
-                {/* MOVED DATE HERE */}
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                   <span style={{ fontSize: 9, color: "#6e7681", fontWeight: 700, letterSpacing: ".5px" }}>DATE:</span>
-                   <span style={{ fontSize: 11, color: "#58a6ff", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace" }}>{new Date().toLocaleDateString('en-GB')}</span>
+              {/* 🛡️ FOOTER */}
+              <div style={{ flexShrink: 0, padding: "8px 16px", background: "rgba(13,17,23,0.5)", borderRadius: 10, border: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", gap: 16 }}>
+                  {comply.map(c => (
+                    <div key={c.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: "#d29922", fontSize: 10 }}>●</span>
+                      <span style={{ color: "#8b949e", fontSize: 10, fontWeight: 700 }}>{c.label} {c.status}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 9, color: "#484f58", fontWeight: 700 }}>STABLE</span>
+                  <span style={{ fontSize: 11, color: "#58a6ff", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace" }}>{new Date().toLocaleDateString('en-GB')}</span>
                 </div>
               </div>
             </div>
@@ -1732,16 +1686,49 @@
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap }}>
                       <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-                        <CH icon="📈" title="Prompt Activity (7 days)" />
-                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><LineChart logs={logs} /></div>
+                        <div style={{ padding: "14px 18px 12px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 15 }}>📈</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Prompt Activity ({range} days)</span>
+                          </div>
+                          <select value={range} onChange={e => setRange(parseInt(e.target.value))}
+                            style={{ appearance: "none", background: "rgba(255,255,255,0.05)", border: "1px solid #30363d", color: "#8b949e", fontSize: 10, borderRadius: 4, padding: "2px 8px", outline: "none", cursor: "pointer" }}>
+                            <option value={7}>7 Days</option>
+                            <option value={15}>15 Days</option>
+                            <option value={30}>30 Days</option>
+                          </select>
+                        </div>
+                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><LineChart logs={filteredLogs} range={range} /></div>
                       </div>
                       <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-                        <CH icon="⚙️" title="Top Risk Categories" />
-                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><DonutChart data={risks} /></div>
+                        <div style={{ padding: "14px 18px 12px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 15 }}>⚙️</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>Top Risk Categories ({range} days)</span>
+                          </div>
+                          <select value={range} onChange={e => setRange(parseInt(e.target.value))}
+                            style={{ appearance: "none", background: "rgba(255,255,255,0.05)", border: "1px solid #30363d", color: "#8b949e", fontSize: 10, borderRadius: 4, padding: "2px 8px", outline: "none", cursor: "pointer" }}>
+                            <option value={7}>7 Days</option>
+                            <option value={15}>15 Days</option>
+                            <option value={30}>30 Days</option>
+                          </select>
+                        </div>
+                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><DonutChart data={filteredRisks} /></div>
                       </div>
-                    <div className="card" id="ai-tool-usage-chart" style={{ display: "flex", flexDirection: "column" }}>
-                        <CH icon="🤖" title="AI Tool Usage" />
-                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><BarChart data={tools} isAiToolChart={true} /></div>
+                      <div className="card" id="ai-tool-usage-chart" style={{ display: "flex", flexDirection: "column" }}>
+                        <div style={{ padding: "14px 18px 12px", borderBottom: "1px solid #21262d", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 15 }}>🤖</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>AI Tool Usage ({range} days)</span>
+                          </div>
+                          <select value={range} onChange={e => setRange(parseInt(e.target.value))}
+                            style={{ appearance: "none", background: "rgba(255,255,255,0.05)", border: "1px solid #30363d", color: "#8b949e", fontSize: 10, borderRadius: 4, padding: "2px 8px", outline: "none", cursor: "pointer" }}>
+                            <option value={7}>7 Days</option>
+                            <option value={15}>15 Days</option>
+                            <option value={30}>30 Days</option>
+                          </select>
+                        </div>
+                        <div style={{ padding: "10px 18px 16px", height: isMobile ? 200 : 260, position: "relative" }}><BarChart data={filteredTools} isAiToolChart={true} /></div>
                       </div>
                       <div className="card" id="user-directory-card" style={{ display: "flex", flexDirection: "column" }}>
                         <CH icon="👥" title="User Directory" />
@@ -1764,11 +1751,11 @@
                                     {orgLabel(String(u.orgId || u.org_id || u.user_id))}
                                   </td>
                                   <td style={{ padding: "10px 8px" }}>
-                                    <span style={{ 
+                                    <span style={{
                                       fontSize: 10, padding: "2px 8px", borderRadius: 10, fontWeight: 700,
-                                      background: u.role === "ADMIN" ? "rgba(35,134,54,.1)" : "rgba(139,148,158,.1)", 
-                                      color: u.role === "ADMIN" ? "#3fb950" : "#8b949e", 
-                                      border: "1px solid currentcolor" 
+                                      background: u.role === "ADMIN" ? "rgba(35,134,54,.1)" : "rgba(139,148,158,.1)",
+                                      color: u.role === "ADMIN" ? "#3fb950" : "#8b949e",
+                                      border: "1px solid currentcolor"
                                     }}>
                                       {u.role}
                                     </span>
@@ -1804,15 +1791,15 @@
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 30, marginBottom: 20, borderBottom: "1px solid #21262d" }}>
-                      <div onClick={() => setSubTokenTab("used")} style={{ 
-                        paddingBottom: 10, cursor: "pointer", 
-                        color: subTokenTab === "used" ? "#58a6ff" : "#8b949e", 
+                      <div onClick={() => setSubTokenTab("used")} style={{
+                        paddingBottom: 10, cursor: "pointer",
+                        color: subTokenTab === "used" ? "#58a6ff" : "#8b949e",
                         borderBottom: `2px solid ${subTokenTab === "used" ? "#58a6ff" : "transparent"}`,
                         fontSize: 13, fontWeight: 600, transition: "all .2s"
                       }}>Tokens Used (Actual)</div>
-                      <div onClick={() => setSubTokenTab("saved")} style={{ 
-                        paddingBottom: 10, cursor: "pointer", 
-                        color: subTokenTab === "saved" ? "#39d353" : "#8b949e", 
+                      <div onClick={() => setSubTokenTab("saved")} style={{
+                        paddingBottom: 10, cursor: "pointer",
+                        color: subTokenTab === "saved" ? "#39d353" : "#8b949e",
                         borderBottom: `2px solid ${subTokenTab === "saved" ? "#39d353" : "transparent"}`,
                         fontSize: 13, fontWeight: 600, transition: "all .2s"
                       }}>Tokens Saved (Estimated)</div>
@@ -1856,22 +1843,20 @@
                           </thead>
                           <tbody>
                             {(subTokenTab === "used" ? fltUsed : fltSaved).length === 0 ? (
-                               <tr><td colSpan="6" style={{ padding: 40, textAlign: "center", color: "#484f58", fontSize: 13 }}>No token data available yet.</td></tr>
+                              <tr><td colSpan="6" style={{ padding: 40, textAlign: "center", color: "#484f58", fontSize: 13 }}>No token data available yet.</td></tr>
                             ) : (subTokenTab === "used" ? fltUsed : fltSaved).map((l, i) => (
-                              <tr key={i} className="tr-hover" style={{ borderBottom: "1px solid #21262d55" }}>
+                              <tr key={i} onClick={() => setPromptModal({ ...l, variant: "compact" })} className="tr-hover" style={{ borderBottom: "1px solid #21262d55", cursor: "pointer" }}>
                                 <td style={{ padding: 14, color: "#8b949e", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{fmtAge(l.timestamp)}</td>
                                 <td style={{ padding: 14, color: "#58a6ff", fontWeight: 700, whiteSpace: "nowrap" }}>{orgLabel(l.userId)}</td>
                                 <td style={{ padding: 14, color: "#c9d1d9", whiteSpace: "nowrap" }}>{l.tool}</td>
                                 <td style={{ padding: 14, color: "#c9d1d9", fontWeight: 600 }}>{nv(l.tokens || l.saved).toLocaleString()}</td>
                                 <td style={{ padding: 14, color: subTokenTab === "used" ? "#fca5a5" : "#39d353", fontWeight: 800, fontSize: 13 }}>
-                                    {subTokenTab === "used" ? "-" : "+"}${nv(l.cost || l.value).toFixed(4)}
+                                  {subTokenTab === "used" ? "-" : "+"}${nv(l.cost || l.value).toFixed(4)}
                                 </td>
                                 <td style={{ padding: "8px 14px", color: "#c9d1d9", whiteSpace: "nowrap", textAlign: "right" }}>
                                   {l.originalPrompt ? (
-                                    <div title="View Prompt Details" onClick={() => setPromptModal({ ...l, variant: "compact" })} 
-                                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, cursor: "pointer", transition: "all .15s" }} 
-                                      onMouseEnter={e => { e.currentTarget.style.background = "rgba(56,139,253,0.15)"; e.currentTarget.style.borderColor = "#58a6ff"; }} 
-                                      onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}>
+                                    <div title="View Prompt Details"
+                                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, transition: "all .15s" }}>
                                       <span style={{ fontSize: 16 }}>📄</span>
                                     </div>
                                   ) : <span style={{ color: "#484f58" }}>—</span>}

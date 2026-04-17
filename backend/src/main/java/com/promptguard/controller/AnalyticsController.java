@@ -22,8 +22,9 @@ public class AnalyticsController {
 
     private String resolveUserId(String userId) {
         if (userId == null) return null;
-        if ("Telecomm".equalsIgnoreCase(userId) || "kushal-user".equalsIgnoreCase(userId)) return "101";
-        if ("Software".equalsIgnoreCase(userId) || "rohan-user".equalsIgnoreCase(userId)) return "102";
+        // Map everything to the canonical Org Name
+        if ("101".equals(userId) || "Telecomm".equalsIgnoreCase(userId) || "kushal-user".equalsIgnoreCase(userId)) return "Telecomm";
+        if ("102".equals(userId) || "Software".equalsIgnoreCase(userId) || "rohan-user".equalsIgnoreCase(userId)) return "Software";
         return userId;
     }
 
@@ -54,11 +55,11 @@ public class AnalyticsController {
         resp.put("totalCostSaved", summary.get("costSaved"));
         
         if (resolvedId == null || resolvedId.isEmpty() || "ALL".equals(resolvedId)) {
-            resp.put("usedLogs", repository.findUsedTokensLogs(50));
-            resp.put("savedLogs", repository.findSavedTokensLogs(50));
+            resp.put("usedLogs", repository.findUsedTokensLogs());
+            resp.put("savedLogs", repository.findSavedTokensLogs());
         } else {
-            resp.put("usedLogs", repository.findUsedTokensLogsByUser(resolvedId, 50));
-            resp.put("savedLogs", repository.findSavedTokensLogsByUser(resolvedId, 50));
+            resp.put("usedLogs", repository.findUsedTokensLogsByUser(resolvedId));
+            resp.put("savedLogs", repository.findSavedTokensLogsByUser(resolvedId));
         }
         
         return ResponseEntity.ok(resp);
@@ -80,17 +81,17 @@ public class AnalyticsController {
     }
 
     @GetMapping("/recent-logs")
-    public ResponseEntity<?> getRecentLogs(@RequestParam(defaultValue = "50") int limit) {
-        return ResponseEntity.ok(repository.findRecent(limit));
+    public ResponseEntity<?> getRecentLogs() {
+        return ResponseEntity.ok(repository.findRecent());
     }
 
     @GetMapping("/my-prompts")
-    public ResponseEntity<?> myPrompts(
-            @RequestParam String userId,
-            @RequestParam(defaultValue = "50") int limit) {
+    public ResponseEntity<?> myPrompts(@RequestParam String userId) {
         String resolvedId = resolveUserId(userId);
         if (resolvedId == null || resolvedId.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "userId is required"));
+
+        String altId = "Software".equalsIgnoreCase(resolvedId) ? "102" : ("Telecomm".equalsIgnoreCase(resolvedId) ? "101" : resolvedId);
 
         List<Map<String, Object>> rows = db.queryForList(
                 "SELECT id, " +
@@ -105,9 +106,9 @@ public class AnalyticsController {
                 "  action, " +
                 "  action_reason     AS \"actionReason\", " +
                 "  tokens_used       AS \"tokensUsed\", " + 
-                "  tokens_used       AS \"tokens_used\", " +
-                "  tokens_used       AS \"tokens\", " +
-                "  tokens_saved      AS \"tokensSaved\", " +
+                "  tokens_used       AS \"tokens_used\", " + 
+                "  tokens_used       AS \"tokens\", " + 
+                "  tokens_saved      AS \"tokensSaved\", " + 
                 "  tokens_saved      AS \"tokens_saved\", " +
                 "  tokens_saved      AS \"saved\", " +
                 "  cost_used         AS \"costUsed\", " +
@@ -117,8 +118,8 @@ public class AnalyticsController {
                 "  cost_saved        AS \"cost_saved\", " +
                 "  cost_saved        AS \"value\", " +
                 "  created_at        AS \"timestamp\" " +
-                "FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-                resolvedId, limit);
+                "FROM audit_logs WHERE user_id = ? OR user_id = ? ORDER BY created_at DESC",
+                resolvedId, altId);
         return ResponseEntity.ok(rows);
     }
 
@@ -137,7 +138,12 @@ public class AnalyticsController {
         try {
             return ResponseEntity.ok(repository.findStatsByUser(resolvedId));
         } catch (Exception e) {
-            return ResponseEntity.ok(Map.of("total", 0, "blocked", 0, "redacted", 0, "allowed", 0));
+            return ResponseEntity.ok(Map.of(
+                "totalPrompts", 0, "total", 0,
+                "blockedPrompts", 0, "blocked", 0,
+                "redactedPrompts", 0, "redacted", 0,
+                "allowedPrompts", 0, "allowed", 0
+            ));
         }
     }
 }

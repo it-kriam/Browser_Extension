@@ -34,20 +34,20 @@ public class PromptController {
     @PostMapping("/prompts")
     public ResponseEntity<PromptResponse> handlePrompt(@RequestBody PromptRequest request) {
         long start = System.currentTimeMillis();
+        System.out.println("[PromptController] 📩 Received prompt from userId=" + request.getUserId() + ", tool=" + request.getTool());
 
         String sub = request.getSubUser();
         if (sub == null || sub.trim().isEmpty() || "anonymous-sub".equals(sub)) sub = "unknown";
         
         String uid = request.getUserId();
-        // Resolve anonymous-user based on subUser if available
-        if (uid == null || uid.trim().isEmpty() || "anonymous-user".equals(uid)) {
-            if ("kushal-user".equalsIgnoreCase(sub)) uid = "101";
-            else if ("rohan-user".equalsIgnoreCase(sub)) uid = "102";
-            else uid = "anonymous-user";
+        // Ensure consistent naming for storage — Use Org names as primary identifiers
+        if ("101".equals(uid) || "Telecomm".equalsIgnoreCase(uid) || "kushal-user".equalsIgnoreCase(uid) || "kushal-user".equalsIgnoreCase(sub)) {
+            uid = "Telecomm";
+        } else if ("102".equals(uid) || "Software".equalsIgnoreCase(uid) || "rohan-user".equalsIgnoreCase(uid) || "rohan-user".equalsIgnoreCase(sub)) {
+            uid = "Software";
+        } else if (uid == null || uid.trim().isEmpty() || "anonymous-user".equals(uid)) {
+            uid = "anonymous-user";
         }
-        // Map natural text org names to their DB orgId manually for fallback safety
-        if ("Telecomm".equalsIgnoreCase(uid) || "kushal-user".equalsIgnoreCase(uid)) uid = "101";
-        if ("Software".equalsIgnoreCase(uid) || "rohan-user".equalsIgnoreCase(uid)) uid = "102";
         
         request.setSubUser(sub);
         request.setUserId(uid);
@@ -64,10 +64,8 @@ public class PromptController {
 
         long ms = System.currentTimeMillis() - start;
         
-        // 💾 SKIP audit if it is just a test from UI/Extension
-        if (!request.isTesting()) {
-            auditService.log(request, riskScore, decision, finalPrompt, ms);
-        }
+        // 💾 Send to AuditService — it will decide if it needs to be stored or just logged to console.
+        auditService.log(request, riskScore, decision, finalPrompt, ms);
 
         PromptResponse resp = new PromptResponse();
         resp.setAction(decision.getAction());

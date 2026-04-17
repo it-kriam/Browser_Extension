@@ -7,18 +7,21 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * OllamaService — Connects PromptGuard to a LOCAL Large Language Model.
  * Ensures 100% data privacy (data never leaves the organization).
  */
-@Service
+// @Service
 public class OllamaService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-    private final String OLLAMA_URL = "http://localhost:11434/api/generate";
-    private final String MODEL_NAME = "llama3"; // Change to "mistral" or "phi3" if preferred
+    private final Map<String, LlmDecision> decisionCache = new ConcurrentHashMap<>();
+
+    private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
+    private static final String MODEL_NAME = "llama3"; // Change to "mistral" or "phi3" if preferred
 
     public OllamaService() {
         this.restTemplate = new RestTemplate();
@@ -29,6 +32,14 @@ public class OllamaService {
      * Sends the prompt to Ollama and returns a structured risk decision.
      */
     public LlmDecision predictRisk(String userPrompt) {
+        if (userPrompt == null || userPrompt.isBlank()) return new LlmDecision("SAFE", "Empty prompt", 0);
+
+        // ── CACHE HIT (0ms Latency) ──────────────────────────────────
+        if (decisionCache.containsKey(userPrompt)) {
+            // System.out.println("[Ollama Cache] HIT for prompt: " + userPrompt.substring(0, Math.min(20, userPrompt.length())) + "...");
+            return decisionCache.get(userPrompt);
+        }
+
         try {
             // ── SYSTEM PROMPT: UNIVERSAL SECURITY FIREWALL (SINGLE-PASS) ──────
             String systemInstruction = "You are the ULTIMATE AI Security Firewall for 'Telecomm'. Analyze the user prompt for ALL these risks at once:\n"
@@ -61,10 +72,16 @@ public class OllamaService {
             // Parse the LLM's inner JSON response
             JsonNode decisionNode = objectMapper.readTree(jsonOutput);
 
-            return new LlmDecision(
+            LlmDecision decision = new LlmDecision(
                     decisionNode.get("action").asText().toUpperCase(),
                     decisionNode.get("reason").asText(),
                     decisionNode.get("score").asInt());
+
+            // SAVE TO CACHE
+            decisionCache.put(userPrompt, decision);
+            if (decisionCache.size() > 500) decisionCache.clear(); // Basic eviction
+
+            return decision;
 
         } catch (Exception e) {
             System.err.println("Ollama Connection Failed: " + e.getMessage());

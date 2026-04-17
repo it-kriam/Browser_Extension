@@ -11,52 +11,47 @@ public class AuditService {
     private final JdbcTemplate db;
     private final TokenService tokenService;
 
-    public AuditService(JdbcTemplate db, TokenService tokenService) { 
-        this.db = db; 
+    public AuditService(JdbcTemplate db, TokenService tokenService) {
+        this.db = db;
         this.tokenService = tokenService;
     }
 
     @Async
     public void log(PromptRequest request,
-                    RiskScore riskScore,
-                    PolicyDecision decision,
-                    String finalPrompt,
-                    long processingTimeMs) {
+            RiskScore riskScore,
+            PolicyDecision decision,
+            String finalPrompt,
+            long processingTimeMs) {
 
         String userId = (request.getUserId() != null && !request.getUserId().isBlank())
                 ? request.getUserId().trim()
                 : "anonymous-user";
 
+        String actionLabel = (decision != null && decision.getAction() != null) ? decision.getAction().name() : "ALLOW";
+        int scoreLabel     = (riskScore != null) ? riskScore.getTotalScore() : 0;
+        System.out.println("[AuditService] 📥 RECEIVED log() — user=" + userId
+                + ", action=" + actionLabel + ", score=" + scoreLabel
+                + ", tool=" + (request.getTool() != null ? request.getTool() : "Unknown")
+                + ", testing=" + request.isTesting());
+
         try {
-            String riskType = "NONE";
-            if (riskScore != null && riskScore.getRiskType() != null)
-                riskType = riskScore.getRiskType().name();
-
-            String riskLevel = "NONE";
-            if (riskScore != null && riskScore.getRiskLevel() != null)
-                riskLevel = riskScore.getRiskLevel().name();
-
-            int score  = (riskScore != null) ? riskScore.getTotalScore() : 0;
-
-            String action = "ALLOW";
-            if (decision != null && decision.getAction() != null)
-                action = decision.getAction().name();
-
+            java.util.UUID logId = java.util.UUID.randomUUID();
+            String riskType = (riskScore != null && riskScore.getRiskType() != null) ? riskScore.getRiskType().name() : "NONE";
+            String riskLevel = (riskScore != null && riskScore.getRiskLevel() != null) ? riskScore.getRiskLevel().name() : "NONE";
+            int score = (riskScore != null) ? riskScore.getTotalScore() : 0;
+            String action = (decision != null && decision.getAction() != null) ? decision.getAction().name() : "ALLOW";
             String reason = (decision != null) ? decision.getReason() : "";
 
-            // Calculate Token/Cost Metrics
             String originalPrompt = request.getPrompt();
-            String tool = request.getTool() != null ? request.getTool() : "Unknown";
-            
+            String tool = (request.getTool() != null) ? request.getTool() : "Unknown";
+
             int inputOri = tokenService.countTokens(originalPrompt);
             int outputOri = tokenService.getEstimateResponseTokens(originalPrompt);
             double costOri = tokenService.calculateCost(tool, inputOri, outputOri);
-            
-            int tkUsed = 0;
-            int tkSaved = 0;
-            double cUsed = 0.0;
-            double cSaved = 0.0;
-            
+
+            int tkUsed = 0, tkSaved = 0;
+            double cUsed = 0.0, cSaved = 0.0;
+
             if ("BLOCK".equals(action)) {
                 tkSaved = inputOri + outputOri;
                 cSaved = costOri;
@@ -72,47 +67,34 @@ public class AuditService {
                 cUsed = costOri;
             }
 
+            // 🧪 Only skip database storage for the Dashboard UI Playground. 
+            // 📑 Popup tests and production traffic are always stored.
+            if (request.isTesting() && "DashboardTest".equalsIgnoreCase(tool)) {
+                System.out.println("[AuditService] 🧪 TEST ONLY 🧪 No db storage. Result: User=" + userId + ", Action=" + action + ", Score=" + score + " (" + riskType + ")");
+                return;
+            }
+
             db.update(
                 "INSERT INTO audit_logs " +
-                "(user_id, tool, browser_name, original_prompt, redacted_prompt, " +
+                "(id, user_id, tool, browser_name, original_prompt, redacted_prompt, " +
                 " highest_risk_type, risk_score, risk_level, action, action_reason, " +
                 " processing_time_ms, tokens_used, tokens_saved, cost_used, cost_saved) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                userId,
-                tool,
-                request.getBrowserName() != null ? request.getBrowserName() : "Unknown",
-                originalPrompt,
-                finalPrompt,
-                riskType,
-                score,
-                riskLevel,
-                action,
-                reason,
-                processingTimeMs,
-                tkUsed,
-                tkSaved,
-                cUsed,
-                cSaved
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                logId, userId, tool,
+                (request.getBrowserName() != null ? request.getBrowserName() : "Unknown"),
+                originalPrompt, finalPrompt,
+                riskType, score, riskLevel, action, reason,
+                processingTimeMs, tkUsed, tkSaved, cUsed, cSaved
             );
 
-            String sub = (request.getSubUser() != null && !request.getSubUser().trim().isEmpty()) ? request.getSubUser().trim() : "unknown";
-
-            String orgLabel = userId;
-            if ("101".equals(userId) || "Telecomm".equalsIgnoreCase(userId) || "kushal-user".equals(userId)) orgLabel = "Telecomm";
-            else if ("102".equals(userId) || "Software".equalsIgnoreCase(userId) || "rohan-user".equals(userId)) orgLabel = "Software";
-            
-            // Force the database's actual org mapping to prevent mismatched displays
-            if ("rohan-user".equalsIgnoreCase(sub)) orgLabel = "Software";
-            if ("kushal-user".equalsIgnoreCase(sub)) orgLabel = "Telecomm";
-
-            System.out.println("[AuditService] ✅ Saved ✅ Organization=" + orgLabel + ",user=" + sub
-                + ", tool=" + request.getTool()
-                + ", browser=" + request.getBrowserName()
-                + ", action=" + action);
-
+            System.out.println("[AuditService] ✅ SUCCESS ✅ Log stored: " + logId + " for user: " + userId);
         } catch (Exception e) {
-            System.err.println("[AuditService] ❌ Failed to save log: " + e.getMessage());
-            System.err.println("[AuditService] userId=" + userId + ", tool=" + request.getTool());
+            System.err.println("[AuditService] ❌ CRITICAL FAILURE ❌ user=" + userId
+                + ", action=" + actionLabel + ", error=" + e.getMessage());
+            if (e.getCause() != null) {
+                System.err.println("[AuditService] ❌ Caused by: " + e.getCause().getMessage());
+            }
+            e.printStackTrace();
         }
     }
 }

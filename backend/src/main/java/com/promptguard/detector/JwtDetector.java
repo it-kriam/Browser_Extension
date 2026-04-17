@@ -2,63 +2,73 @@ package com.promptguard.detector;
 
 import com.promptguard.model.DetectionResult;
 import com.promptguard.model.RiskType;
-import com.promptguard.service.OllamaService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * JwtDetector — 3-Layer Intelligent JWT Shield.
- * L1: Regex detection for Header.Payload.Signature format.
+ * JwtDetector — High-Performance JWT Shield.
+ * L1: Regex detection for Header.Payload.Signature format + Base64 payload decode.
  * L2: Semantic intent for authentication token sharing.
- * L3: LLM reasoning for obfuscated tokens or login flows.
+ * Short-circuit: L1 hit (score=90) → L2 skipped.
  */
 @Component
 public class JwtDetector implements Detector {
 
-    // JWT structure: 3 Base64URL segments separated by dots.
+    // ── L1: JWT Structure Pattern ─────────────────────────────────────────
     private static final Pattern JWT_PATTERN = Pattern.compile(
-            "\\b(eyJ[A-Za-z0-9_-]{10,})\\.([A-Za-z0-9_-]{10,})\\.([A-Za-z0-9_-]{20,})\\b"
-    );
+        "\\b(eyJ[A-Za-z0-9_-]{10,})\\.([A-Za-z0-9_-]{10,})\\.([A-Za-z0-9_-]{20,})\\b");
 
-    // Common JWT and authentication token keywords
-    private static final Set<String> JWT_KEYWORDS = Set.of(
-        "jwt", "json web token", "bearer token", "access token", 
+    // ── L2: High-Risk Auth Token Keywords (score=80) ──────────────────────
+    private static final List<String> AUTH_TOKEN_KEYWORDS = List.of(
+        "jwt", "json web token", "bearer token", "access token",
         "refresh token", "id token", "auth token", "authorization bearer",
-        "x-auth-token"
+        "x-auth-token", "authorization header", "token authentication",
+        "oauth token", "oidc token", "saml token", "session token",
+        "api token", "service token", "machine token"
     );
 
-    public JwtDetector() {
-    }
+    // ── L2: Medium-Risk Auth Context Keywords (score=65) ──────────────────
+    private static final List<String> AUTH_CONTEXT_KEYWORDS = List.of(
+        "token expiry", "token refresh", "token validation", "token decode",
+        "jwt payload", "jwt claims", "jwt secret", "signing key",
+        "token scope", "token audience", "token issuer", "token subject",
+        "cookie session", "session id", "csrf token", "xsrf token",
+        "api key header", "authorization flow", "sso token"
+    );
+
+    // ── L2: Low-Risk Auth Discussion Keywords (score=50) ──────────────────
+    private static final List<String> AUTH_DISCUSSION_KEYWORDS = List.of(
+        "authentication", "login token", "logout token", "token rotation",
+        "token blacklist", "token revocation", "token store",
+        "token middleware", "auth middleware", "auth interceptor",
+        "jwt library", "jsonwebtoken", "nimbus jwt"
+    );
+
+    private static final Pattern INQUIRY_PATTERN = Pattern.compile(
+        "\\b(safe|ok|okay|can i|should i|is it|allowed|policy|how to|is it safe|tell me about)\\b",
+        Pattern.CASE_INSENSITIVE);
 
     @Override
-    public String getName() {
-        return "JwtDetector";
-    }
+    public String getName() { return "JwtDetector"; }
 
     @Override
     public List<DetectionResult> detect(DetectionContext context) {
-        return detect(context.getPrompt(), context.getDecision());
-    }
-
-    public List<DetectionResult> detect(String prompt, OllamaService.LlmDecision decision) {
         List<DetectionResult> results = new ArrayList<>();
+        String prompt = context.getPrompt();
+        String normalized = context.getNormalizedPrompt();
+        
         if (prompt == null || prompt.isBlank()) return results;
 
-        // ── LAYER 1: REGEX ───────────────────────────────────────────
+        // ── LAYER 1: REGEX + Base64 Decode (Original Text — Short-circuits) ──
         if (runRegexLayer(prompt, results)) return results;
 
-        // ── LAYER 2: SEMANTIC ────────────────────────────────────────
-        runSemanticLayer(prompt, results);
-        if (!results.isEmpty()) return results;
-
-        // ── LAYER 3: LLM (Reusing shared decision) ───────────────────
-        runLlamaLayer(prompt, results, decision);
+        // ── LAYER 2: SEMANTIC (Normalized Text) ───────────────────────────
+        runSemanticLayer(prompt, normalized, results);
 
         return results;
     }
@@ -68,25 +78,50 @@ public class JwtDetector implements Detector {
         if (m.find()) {
             String fullToken = m.group();
             String description = buildDescription(m.group(2)); // group(2) = payload
-            results.add(new DetectionResult(RiskType.SECRET, 90, "L1_JWT: " + description, fullToken));
+            results.add(new DetectionResult(RiskType.SECRET, 90,
+                "L1_JWT_REGEX: " + description, fullToken));
             return true;
         }
         return false;
     }
 
-    private void runSemanticLayer(String prompt, List<DetectionResult> results) {
-        String lower = prompt.toLowerCase();
-        for (String kw : JWT_KEYWORDS) {
-            if (lower.contains(kw)) {
-                results.add(new DetectionResult(RiskType.SECRET, 80, "L2_JWT_KEYWORD: " + kw, kw));
+    private void runSemanticLayer(String original, String normalized, List<DetectionResult> results) {
+        String lowerOrig = original.toLowerCase();
+        boolean isSafetyInquiry = INQUIRY_PATTERN.matcher(normalized).find() || lowerOrig.contains("?");
+
+        // Inquiry logic: Questions about safety should be ALLOW (low score)
+        if (isSafetyInquiry && !runRegexLayer(original, new ArrayList<>())) {
+            results.add(new DetectionResult(RiskType.SECRET, 20, "L2_JWT_INQUIRY",
+                "INFO: User is inquiring about JWT safety, not disclosing tokens."));
+            return;
+        }
+
+        // Tier 1: Named token mention (jwt, bearer, access token) → REDACT (60-79)
+        for (String kw : AUTH_TOKEN_KEYWORDS) {
+            String cleanKw = kw.replace(" ", "").replace("-", "").toLowerCase();
+            if (normalized.contains(cleanKw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 65,
+                    "L2_JWT_TOKEN: " + kw, kw));
                 return;
             }
         }
-    }
-
-    private void runLlamaLayer(String prompt, List<DetectionResult> results, OllamaService.LlmDecision decision) {
-        if (decision.score >= 80 && (decision.reason.toUpperCase().contains("JWT") || decision.reason.toUpperCase().contains("AUTH TOKEN") || decision.reason.toUpperCase().contains("SESSION"))) {
-            results.add(new DetectionResult(RiskType.SECRET, decision.score, "L3_JWT_LLM: " + decision.reason, prompt));
+        // Tier 2: Auth implementation context → ALERT (40-59)
+        for (String kw : AUTH_CONTEXT_KEYWORDS) {
+            String cleanKw = kw.replace(" ", "").replace("-", "").toLowerCase();
+            if (normalized.contains(cleanKw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 50,
+                    "L2_JWT_CONTEXT: " + kw, kw));
+                return;
+            }
+        }
+        // Tier 3: General auth discussion → ALLOW (safe educational)
+        for (String kw : AUTH_DISCUSSION_KEYWORDS) {
+            String cleanKw = kw.replace(" ", "").replace("-", "").toLowerCase();
+            if (normalized.contains(cleanKw)) {
+                results.add(new DetectionResult(RiskType.SECRET, 35,
+                    "L2_JWT_DISCUSSION: " + kw, kw));
+                return;
+            }
         }
     }
 

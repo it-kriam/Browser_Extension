@@ -59,7 +59,7 @@ public class AuditLogRepository {
             "FROM audit_logs");
     }
 
-    public List<Map<String, Object>> findRecent(int limit) {
+    public List<Map<String, Object>> findRecent() {
         return db.queryForList(
                 "SELECT id, " +
                 "  user_id           AS \"userId\", " +
@@ -85,63 +85,72 @@ public class AuditLogRepository {
                 "  cost_saved        AS \"cost_saved\", " +
                 "  cost_saved        AS \"value\", " +
                 "  created_at        AS \"timestamp\" " +
-                "FROM audit_logs ORDER BY created_at DESC LIMIT ?",
-                limit);
+                "FROM audit_logs ORDER BY created_at DESC");
     }
 
-    public List<Map<String, Object>> findUsedTokensLogs(int limit) {
+    public List<Map<String, Object>> findUsedTokensLogs() {
         return db.queryForList(
             "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
             "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
             "tokens_used AS \"tokensUsed\", tokens_used AS \"tokens\", tokens_saved AS \"tokensSaved\", " +
             "cost_used AS \"costUsed\", cost_used AS \"cost\", cost_saved AS \"costSaved\", " +
             "created_at AS \"timestamp\" " +
-            "FROM audit_logs WHERE tokens_used > 0 ORDER BY created_at DESC LIMIT ?", limit);
+            "FROM audit_logs WHERE tokens_used > 0 ORDER BY created_at DESC");
     }
 
-    public List<Map<String, Object>> findUsedTokensLogsByUser(String userId, int limit) {
+    public List<Map<String, Object>> findUsedTokensLogsByUser(String userId) {
+        String altId = "Software".equalsIgnoreCase(userId) ? "102" : ("Telecomm".equalsIgnoreCase(userId) ? "101" : userId);
         return db.queryForList(
             "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
             "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
             "tokens_used AS \"tokensUsed\", tokens_used AS \"tokens\", tokens_saved AS \"tokensSaved\", " +
             "cost_used AS \"costUsed\", cost_used AS \"cost\", cost_saved AS \"costSaved\", " +
             "created_at AS \"timestamp\" " +
-            "FROM audit_logs WHERE tokens_used > 0 AND user_id = ? ORDER BY created_at DESC LIMIT ?", userId, limit);
+            "FROM audit_logs WHERE tokens_used > 0 AND (user_id = ? OR user_id = ?) " +
+            "ORDER BY created_at DESC", userId, altId);
     }
 
-    public List<Map<String, Object>> findSavedTokensLogs(int limit) {
+    public List<Map<String, Object>> findSavedTokensLogs() {
         return db.queryForList(
             "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
             "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
             "tokens_used AS \"tokensUsed\", tokens_saved AS \"tokensSaved\", tokens_saved AS \"saved\", " +
             "cost_used AS \"costUsed\", cost_saved AS \"costSaved\", cost_saved AS \"value\", " +
             "created_at AS \"timestamp\" " +
-            "FROM audit_logs WHERE tokens_saved > 0 ORDER BY created_at DESC LIMIT ?", limit);
+            "FROM audit_logs WHERE tokens_saved > 0 ORDER BY created_at DESC");
     }
 
-    public List<Map<String, Object>> findSavedTokensLogsByUser(String userId, int limit) {
+    public List<Map<String, Object>> findSavedTokensLogsByUser(String userId) {
+        String altId = "Software".equalsIgnoreCase(userId) ? "102" : ("Telecomm".equalsIgnoreCase(userId) ? "101" : userId);
         return db.queryForList(
             "SELECT id, user_id AS \"userId\", tool, browser_name AS \"browserName\", original_prompt AS \"originalPrompt\", " +
             "redacted_prompt AS \"redactedPrompt\", action, action_reason AS \"actionReason\", " +
             "tokens_used AS \"tokensUsed\", tokens_saved AS \"tokensSaved\", tokens_saved AS \"saved\", " +
             "cost_used AS \"costUsed\", cost_saved AS \"costSaved\", cost_saved AS \"value\", " +
             "created_at AS \"timestamp\" " +
-            "FROM audit_logs WHERE tokens_saved > 0 AND user_id = ? ORDER BY created_at DESC LIMIT ?", userId, limit);
+            "FROM audit_logs WHERE tokens_saved > 0 AND (user_id = ? OR user_id = ?) " +
+            "ORDER BY created_at DESC", userId, altId);
     }
 
     public Map<String, Object> findStatsByUser(String userId) {
+        String altId = "Software".equalsIgnoreCase(userId) ? "102" : ("Telecomm".equalsIgnoreCase(userId) ? "101" : userId);
+        
         return db.queryForMap(
                 "SELECT " +
-                        "  COUNT(*) AS \"total\", " +
+                        "  COUNT(*) AS \"totalPrompts\", COUNT(*) AS \"total\", " +
+                        "  COALESCE(SUM(CASE WHEN action='BLOCK' THEN 1 ELSE 0 END), 0) AS \"blockedPrompts\", " +
                         "  COALESCE(SUM(CASE WHEN action='BLOCK' THEN 1 ELSE 0 END), 0) AS \"blocked\", " +
+                        "  COALESCE(SUM(CASE WHEN action='REDACT' THEN 1 ELSE 0 END), 0) AS \"redactedPrompts\", " +
                         "  COALESCE(SUM(CASE WHEN action='REDACT' THEN 1 ELSE 0 END), 0) AS \"redacted\", " +
+                        "  COALESCE(SUM(CASE WHEN action='ALERT' THEN 1 ELSE 0 END), 0) AS \"alertedPrompts\", " +
                         "  COALESCE(SUM(CASE WHEN action='ALERT' THEN 1 ELSE 0 END), 0) AS \"alerted\", " +
+                        "  COALESCE(SUM(CASE WHEN action='ALLOW' THEN 1 ELSE 0 END), 0) AS \"allowedPrompts\", " +
                         "  COALESCE(SUM(CASE WHEN action='ALLOW' THEN 1 ELSE 0 END), 0) AS \"allowed\", " +
                         "  COALESCE(SUM(tokens_used), 0) AS \"tokensUsed\", " +
                         "  COALESCE(SUM(tokens_saved), 0) AS \"tokensSaved\", " +
                         "  COALESCE(SUM(cost_used), 0.0) AS \"costUsed\", " +
                         "  COALESCE(SUM(cost_saved), 0.0) AS \"costSaved\" " +
-                        "FROM audit_logs WHERE user_id = ?",
-                userId);
+                        "FROM audit_logs WHERE user_id = ? OR user_id = ?",
+                userId, altId);
     }
 }

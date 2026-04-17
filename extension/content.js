@@ -110,18 +110,25 @@ function showToast(message, type) {
   setTimeout(() => { if (toast.parentNode) toast.remove(); }, 6000);
 }
 
-async function checkPrompt(promptText, submitFn) {
+async function checkPrompt(promptText, submitFn, onDone) {
   if (!isContextValid()) {
     alert("PromptGuard extension was updated or reloaded.\nPlease refresh this page to continue using AI tools.");
+    if (onDone) onDone();
     return; // Block prompt to prevent anonymous/untracked data
   }
   chrome.storage.sync.get(["enabled"], async (data) => {
-    if (data.enabled === false) { submitFn(promptText); return; }
+    if (data.enabled === false) { submitFn(promptText); if (onDone) onDone(); return; }
 
     // Always call background.js to fetch config/API
     chrome.runtime.sendMessage(
       { type: "PROCESS_PROMPT", prompt: promptText, tool: detectTool(), browserName: await detectBrowser() },
       (result) => {
+        // ── Always unlock interceptor after ANY response (incl. BLOCK) ──
+        // FIX: Previously the unlock lived inside submitFn — so BLOCK (which
+        // never calls submitFn) left interceptEnabled=false permanently,
+        // causing all subsequent prompts to bypass the backend entirely.
+        if (onDone) setTimeout(onDone, 1000);
+
         if (chrome.runtime.lastError || !result) {
           submitFn(promptText);
           return;
@@ -129,6 +136,7 @@ async function checkPrompt(promptText, submitFn) {
 
         if (result.action === "BLOCK") {
           showToast("Prompt BLOCKED! " + result.reason, "block");
+          // ✅ No submitFn — prompt is intentionally stopped. onDone still fires above.
         } else if (result.action === "REDACT") {
           showToast("Sensitive data removed. " + result.reason, "redact");
           submitFn(result.redactedPrompt || promptText);
@@ -136,6 +144,7 @@ async function checkPrompt(promptText, submitFn) {
           showToast("Prompt CRITICAL! " + result.reason, "alert");
           submitFn(promptText);
         } else {
+          showToast("🛡️ Prompt SECURE. No risks detected.", "allow");
           submitFn(promptText);
         }
       }
@@ -171,11 +180,13 @@ document.addEventListener("keydown", async (e) => {
   if (!interceptEnabled || e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.isComposing) return;
   const active = document.activeElement;
   if (!isPromptBox(active)) return;
+  
   const text = getPromptText(active).trim();
   if (text.length < 3) return;
 
   e.preventDefault();
   e.stopImmediatePropagation();
+  interceptEnabled = false; // LOCK IMMEDIATELY
 
   await checkPrompt(text, (final) => {
     if (active.tagName === "TEXTAREA" || active.tagName === "INPUT") {
@@ -188,35 +199,37 @@ document.addEventListener("keydown", async (e) => {
     }
 
     active.dispatchEvent(new Event("input", { bubbles: true })); // alert React/Vue
-    interceptEnabled = false;
     active.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
-    setTimeout(() => { interceptEnabled = true; }, 300);
-  });
+  }, () => { interceptEnabled = true; }); // ✅ onDone: always unlock, even after BLOCK
 }, true);
 
 // ── Send button intercept ─────────────────────────────────────
 document.addEventListener("click", async (e) => {
   if (!interceptEnabled) return;
+  
+  // Broad selector for any "Send" or "Arrow" button in AI tools
   const btn = e.target.closest(
     "button[data-testid*='send' i]," +
     "button[aria-label*='send' i]," +
-    "button[aria-label*='ubmit' i]," +
-    "button[aria-label*='Grok' i]," +
+    "button[aria-label*='Submit' i]," +
+    "button[aria-label*='Gemini' i]," +
     "button[class*='send' i]," +
+    "button:has(svg)," +
     "button svg," +
     "div[role='button'][aria-label*='send' i]," +
     "div[role='button'][aria-label*='Grok' i]," +
-    "div[role='button'][aria-label*='deepseek' i]"
+    "mat-icon[aria-label*='send' i]," +
+    ".send-button"
   );
   if (!btn) return;
 
-  const actualBtn = (btn.tagName === 'SVG') ? btn.closest('button') : btn;
+  const actualBtn = (btn.tagName === 'SVG' || btn.tagName === 'PATH' || btn.tagName === 'MAT-ICON') ? 
+                    (btn.closest('button') || btn.closest('div[role="button"]') || btn) : btn;
   if (!actualBtn) return;
 
   const area =
     lastActivePromptBox ||
-    document.querySelector("textarea#prompt-textarea, textarea#chat-input, textarea[placeholder]") ||
-    document.querySelector("[contenteditable='plaintext-only'], [contenteditable='true']") ||
+    document.querySelector("textarea#prompt-textarea, textarea#chat-input, div#prompt-textarea, [contenteditable='true']") ||
     document.querySelector("textarea");
 
   if (!area || !isPromptBox(area)) return;
@@ -232,10 +245,13 @@ document.addEventListener("click", async (e) => {
     else area.innerText = final;
 
     area.dispatchEvent(new Event("input", { bubbles: true })); // alert React/Vue
-    interceptEnabled = false;
     actualBtn.click();
-    setTimeout(() => { interceptEnabled = true; }, 300);
-  });
+  }, () => { interceptEnabled = true; }); // ✅ onDone: always unlock, even after BLOCK
 }, true);
 
-console.log("🛡️ PromptGuard active on", detectTool());
+// ── Start notification ────────────────────────────────────────
+const tool = detectTool();
+if (tool !== "Unknown") {
+  setTimeout(() => showToast(`🛡️ PromptGuard Active on ${tool}`, "allow"), 1500);
+}
+console.log("🛡️ PromptGuard active on", tool);
